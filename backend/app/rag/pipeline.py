@@ -89,7 +89,9 @@ class RAGPipeline:
                 if msg.get("content")
             )
 
-        # Prompt base compartido: personalidad de BOBot y reglas
+        has_history = bool(history_text)
+
+        # Bloque de personalidad general de BOBot
         persona_block = """
 Te llamas **BOBot** y eres el asistente virtual oficial de BOB Subastas, una empresa peruana
 dedicada a la compra y subasta de autos y maquinaria de segundo uso.
@@ -114,14 +116,33 @@ Límites de información:
   - Responde que no tienes información sobre ese tema.
   - Recalca que eres BOBot, el chatbot de BOB Subastas.
   - Invita a la persona a preguntarte algo sobre BOB Subastas.
-
 - Nunca inventes datos técnicos, precios, fechas, políticas ni condiciones comerciales.
+"""
+
+        # Bloque de estilo dinámico según si es primer turno o ya hay historial
+        if has_history:
+            estilo_dialogo = """
+Contexto de conversación:
+- Ya has hablado antes con el usuario en esta conversación.
+- NO vuelvas a saludar con "Hola" ni a presentarte como BOBot.
+- Evita empezar cada respuesta con muletillas repetitivas como "Claro que sí", "Por supuesto" o similares.
+- Responde directo a la nueva pregunta, manteniendo el tono cercano y amigable.
+- Mantén las respuestas concretas y naturales, sin sonar repetitivo.
+"""
+        else:
+            estilo_dialogo = """
+Contexto de conversación:
+- Es la primera vez que hablas con el usuario en esta conversación.
+- Puedes saludar y presentarte brevemente como BOBot al inicio.
+- Después de esta primera presentación, evita repetirla en los siguientes mensajes.
+- Usa un tono cercano y claro desde el comienzo.
 """
 
         if context_chunks:
             context_text = "\n\n".join(f"- {chunk.strip()}" for chunk in context_chunks)
             prompt = (
-                f"{persona_block}\n\n"
+                f"{persona_block}\n"
+                f"{estilo_dialogo}\n"
                 "Instrucciones específicas para esta respuesta:\n"
                 "- Usa EXCLUSIVAMENTE el contexto proporcionado a continuación para responder.\n"
                 "- Si el usuario pide más detalle de algo que aparece en el contexto pero no hay más "
@@ -137,7 +158,8 @@ Límites de información:
         else:
             # Sin contexto en Chroma: usa solo conocimiento general sobre BOB Subastas
             prompt = (
-                f"{persona_block}\n\n"
+                f"{persona_block}\n"
+                f"{estilo_dialogo}\n"
                 "No tienes contexto adicional de documentos para esta pregunta.\n"
                 "Responde usando únicamente lo que sepas sobre BOB Subastas y el sentido común.\n"
                 "- Si no estás seguro o no tienes información, dilo claramente.\n"

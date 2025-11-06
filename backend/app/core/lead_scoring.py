@@ -80,6 +80,10 @@ def evaluate_lead(message: str) -> dict:
     """
     Evalúa el mensaje del usuario según los criterios oficiales definidos en
     data/criterios_de_score.txt. Devuelve un dict con totales y categoría.
+
+    Importante:
+    - El modelo YA conoce el sistema de scoring y solo debe aplicar los criterios,
+      NO devolver la estructura completa del proceso.
     """
     print("\n------------------------------------")
     print("📊 [SCORING] Iniciando evaluación detallada del lead...")
@@ -112,15 +116,28 @@ def evaluate_lead(message: str) -> dict:
         print(f"🏁 [RESULTADO FINAL] → FRIO ({FALLBACK_SCORE} pts, saludo simple)\n")
         return data
 
+    # -------------------- Cargamos criterios --------------------
     criteria_path = _get_criteria_path()
-    system_prompt = criteria_path.read_text(encoding="utf-8")
-
+    criterios_txt = criteria_path.read_text(encoding="utf-8")
     print(f"📁 Criterios cargados desde: {criteria_path.name}")
 
-    system_prompt += """
-    
-Asegúrate de devolver EXCLUSIVAMENTE un JSON válido, sin texto adicional ni explicaciones.
-Si no puedes evaluar, devuelve un JSON con esta estructura (usa valores enteros):
+    # -------------------- Construimos el prompt --------------------
+    # OJO: aquí le dejamos clarísimo que NO debe devolver el documento de criterios,
+    # sino SOLO la evaluación aplicada al texto del usuario.
+    system_instructions = """
+Eres un evaluador de leads para BOB Subastas.
+
+Ya tienes definido un SISTEMA_DE_SCORING detallado (criterios, boosts y penalizaciones)
+en el bloque de texto que está etiquetado como SISTEMA_DE_SCORING.
+
+Tu tarea NO es reescribir ni devolver ese sistema, sino APLICARLO al texto del usuario.
+
+Debes:
+
+1) Leer el TEXTO_DEL_USUARIO_O_CONVERSACION.
+2) Aplicar exclusivamente el SISTEMA_DE_SCORING.
+3) Devolver SOLO un JSON PLANO con esta estructura EXACTA (sin texto adicional):
+
 {
   "perfil_demografico": int,
   "comportamiento_digital": int,
@@ -134,9 +151,23 @@ Si no puedes evaluar, devuelve un JSON con esta estructura (usa valores enteros)
   "total": int,
   "categoria": "frio" | "tibio" | "caliente" | "descartado"
 }
-    """
 
-    prompt = f"{system_prompt}\n\nTEXTO_DEL_USUARIO_O_CONVERSACION:\n{message}"
+Restricciones IMPORTANTES:
+- NO devuelvas el texto completo del sistema de scoring.
+- NO devuelvas estructuras anidadas con definiciones de fases o criterios.
+- NO devuelvas explicaciones ni comentarios.
+- NO devuelvas claves como "proceso_evaluacion_leads" ni "fase_1", "fase_2", etc.
+- SOLO devuelve UN objeto JSON plano con los campos anteriores y valores numéricos enteros.
+"""
+
+    prompt = (
+        "SISTEMA_DE_SCORING:\n"
+        + criterios_txt
+        + "\n\nINSTRUCCIONES_PARA_LA_EVALUACION:\n"
+        + system_instructions
+        + "\n\nTEXTO_DEL_USUARIO_O_CONVERSACION:\n"
+        + message
+    )
 
     if not settings.gemini_api_key:
         print("⚠️ [SCORING] No hay GEMINI_API_KEY, devolviendo score fallback (20).")
@@ -161,7 +192,6 @@ Si no puedes evaluar, devuelve un JSON con esta estructura (usa valores enteros)
         )
         raw_text = (response.text or "").strip()
         print("✅ [Gemini] Respuesta recibida correctamente.")
-
     except Exception as e:
         print(f"⚠️ [Gemini] Error durante la evaluación: {e}")
         print("🟡 Fallback → asignando score 20 FRÍO.")
@@ -171,26 +201,38 @@ Si no puedes evaluar, devuelve un JSON con esta estructura (usa valores enteros)
             "detalle": {},
         }
 
-    # Intentamos parsear el JSON de forma robusta
+    # -------------------- Parseo robusto del JSON --------------------
     try:
         try:
             data = json.loads(raw_text)
         except Exception:
-            # Por si el modelo mete algo extra: recortamos al primer/último { }
             start = raw_text.find("{")
             end = raw_text.rfind("}")
             if start != -1 and end != -1 and end > start:
                 data = json.loads(raw_text[start : end + 1])
             else:
                 raise
+
         print("📦 JSON recibido desde Gemini:")
         print(json.dumps(data, indent=2, ensure_ascii=False))
+
+        # 🔎 Salvaguarda extra: si el modelo devolvió el SISTEMA en vez de la evaluación
+        # (por ejemplo, una estructura con "proceso_evaluacion_leads" y sin "total"),
+        # lo tratamos como error y usamos fallback.
+        if (
+            isinstance(data, dict)
+            and "proceso_evaluacion_leads" in data
+            and "total" not in data
+        ):
+            print("⚠️ [SCORING] El modelo devolvió el sistema de scoring en vez de una evaluación. Fallback 20 FRÍO.")
+            data = {"total": FALLBACK_SCORE, "categoria": "frio"}
+
     except Exception as e:
         print(f"⚠️ No se pudo interpretar el JSON de Gemini: {e}")
         print("🟡 Fallback → asignando score 20 FRÍO.")
         data = {"total": FALLBACK_SCORE, "categoria": "frio"}
 
-    # Normalización
+    # -------------------- Normalización final --------------------
     try:
         total = int(data.get("total", FALLBACK_SCORE) or FALLBACK_SCORE)
     except Exception:
@@ -206,7 +248,6 @@ Si no puedes evaluar, devuelve un JSON con esta estructura (usa valores enteros)
     print("------------------------------------\n")
 
     return data
-
 
 # ---------------------------------------------------
 # 🔹 Mapeos y helpers para integración

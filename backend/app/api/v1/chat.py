@@ -1,4 +1,3 @@
-# backend/app/api/v1/chat.py
 from time import perf_counter
 
 from fastapi import APIRouter, Depends
@@ -13,7 +12,7 @@ from backend.app.core.lead_scoring import (
     evaluate_lead,
     total_points_to_category,
     HOT_THRESHOLD,
-    FALLBACK_SCORE,  # 👈 NUEVO: usamos el mismo fallback (20) que en lead_scoring.py
+    FALLBACK_SCORE,  # usamos el mismo fallback (20) que en lead_scoring.py
 )
 
 router = APIRouter(
@@ -42,6 +41,68 @@ def build_conversation_text(prev_interactions: list[Interaction], new_message: s
     print("🧾 Texto de conversación enviado a scoring:")
     print(conversation_text)
     return conversation_text
+
+
+def user_clearly_requests_advisor(
+    prev_interactions: list[Interaction],
+    new_message: str,
+) -> bool:
+    """
+    Detecta si el usuario está pidiendo explícitamente hablar con un asesor
+    o si está respondiendo afirmativamente a una oferta de asesor del bot.
+    """
+    msg = (new_message or "").strip().lower()
+    if not msg:
+        return False
+
+    # 1) Frases directas donde el usuario pide asesor/contacto
+    direct_phrases = [
+        "hablar con un asesor",
+        "quiero un asesor",
+        "quiero hablar con un asesor",
+        "quiero que me contacten",
+        "quiero que me contact",
+        "que me contacten",
+        "me contacten",
+        "quiero contacto",
+        "quiero que me llamen",
+        "quiero que me llamen",
+        "llámenme",
+        "llamame",
+        "contactarme",
+        "asesor comercial",
+    ]
+    if any(p in msg for p in direct_phrases):
+        return True
+
+    # 2) Confirmación corta después de que el bot ofreció asesor
+    if prev_interactions:
+        last_bot_resp = prev_interactions[-1].bot_response or ""
+        last_bot_lower = last_bot_resp.lower()
+
+        # ¿El bot habló de asesor/contacto en el último mensaje?
+        if any(
+            kw in last_bot_lower
+            for kw in ["asesor", "que te contacten", "que te contactemos", "derivarte con un asesor"]
+        ):
+            # Y el usuario responde algo tipo "sí", "ok", "si por favor", "claro", etc.
+            short_affirmatives = [
+                "si",
+                "sí",
+                "ok",
+                "okay",
+                "claro",
+                "dale",
+                "de acuerdo",
+                "si por favor",
+                "sí por favor",
+                "por favor",
+            ]
+            # Mensajes cortos que contengan alguna de estas palabras
+            if len(msg) <= 30 and any(a in msg for a in short_affirmatives):
+                return True
+
+    return False
 
 
 @router.post("/", response_model=ChatResponse)
@@ -85,6 +146,10 @@ async def chat_endpoint(
 
     # Texto completo de conversación para scoring
     conversation_text = build_conversation_text(prev_interactions, payload.message)
+
+    # Flag: ¿el usuario pidió claramente un asesor?
+    user_wants_advisor = user_clearly_requests_advisor(prev_interactions, payload.message)
+    print(f"📞 ¿Usuario pidió asesor explícitamente? → {'sí' if user_wants_advisor else 'no'}")
 
     # ----------------------------------------
     # 1️⃣ RAG con Chroma (prioridad #1)
@@ -135,7 +200,7 @@ async def chat_endpoint(
     # --------------------------------
     detailed = evaluate_lead(conversation_text)
 
-    # 👇 Usamos el mismo fallback estándar que en evaluate_lead (20),
+    # Usamos el mismo fallback estándar que en evaluate_lead (20),
     # por si por alguna razón no llega 'total' en el dict.
     total = detailed.get("total", FALLBACK_SCORE)
     try:
@@ -145,6 +210,15 @@ async def chat_endpoint(
 
     session_category = total_points_to_category(total)
 
+    # 🔥 Si el usuario pidió asesor explícitamente, forzamos score caliente
+    if user_wants_advisor and total < HOT_THRESHOLD:
+        print(
+            "📞 El usuario ha solicitado contacto con un asesor. "
+            "Forzamos score CALIENTE para esta sesión."
+        )
+        total = HOT_THRESHOLD
+        session_category = "caliente"
+
     print(f"🏷️ Lead (detallado): {detailed.get('categoria', 'frio').upper()} ({total} pts)")
     print(f"💡 Categoría global (simple): {session_category.upper()}")
 
@@ -152,10 +226,13 @@ async def chat_endpoint(
     crossed_hot_now = score_before < HOT_THRESHOLD <= total
     if crossed_hot_now:
         print("🔥 El lead acaba de cruzar el umbral CALIENTE.")
+        # 👉 Aquí SÍ mencionamos asesores de forma explícita para el canal web
         final_answer += (
             "\n\n🟢 Veo que tienes **alta intención de compra**. "
-            "Puedo derivarte con un asesor comercial de BOB Subastas para ayudarte "
-            "con los siguientes pasos (ofertas, pagos, reservas, etc.)."
+            "Si quieres, puedo derivarte con un asesor comercial de BOB Subastas "
+            "para ayudarte con los siguientes pasos (ofertas, pagos, reservas, etc.). "
+            "Además, en pantalla verás un pequeño formulario para que dejes tus datos "
+            "y puedan contactarte. 😊"
         )
 
     end = perf_counter()
