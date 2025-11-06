@@ -1,4 +1,5 @@
 # 🤖 BOBot AI Agent  
+
 **Hackatón SomosBOB 2025 — Edición Virtual**
 
 > 🚀 Backend del agente conversacional inteligente que atiende, califica y deriva leads de BOB Subastas.
@@ -31,16 +32,16 @@ El agente interpreta mensajes entrantes (por chat o WhatsApp), **responde pregun
 
 ## 🧩 Arquitectura General
 
-```
+<pre>
 ┌────────────────────────────────────────┐
 │             Usuario final              │
-│ (Web Chat o WhatsApp Twilio)           │
+│     (Web Chat o WhatsApp Twilio)       │
 └────────────────────────────────────────┘
                     │
                     ▼
         ┌─────────────────────┐
-        │ FastAPI Backend     │
-        │  (bo-bot)           │
+        │     FastAPI Backend │
+        │        (bo-bot)     │
         ├─────────────────────┤
         │ /chat → RAG + Scoring
         │ /twilio/whatsapp → Webhook
@@ -49,11 +50,11 @@ El agente interpreta mensajes entrantes (por chat o WhatsApp), **responde pregun
         └─────────────────────┘
                     │
                     ▼
- ┌──────────────┬──────────────┬──────────────┐
- │ SQLite (DB)  │ ChromaDB (RAG)│ Gemini (LLM) │
- │ Leads + Logs │ Embeddings    │ Respuestas    │
- └──────────────┴──────────────┴──────────────┘
-```
+┌──────────────┬──────────────┬──────────────┐
+│ SQLite (DB)  │ ChromaDB (RAG) │ Gemini (LLM) │
+│ Leads + Logs │  Embeddings    │  Respuestas   │
+└──────────────┴──────────────┴──────────────┘
+</pre>
 
 ---
 
@@ -68,13 +69,13 @@ El agente interpreta mensajes entrantes (por chat o WhatsApp), **responde pregun
 | Vector Store | **ChromaDB** | Almacenamiento contextual |
 | Mensajería | **Twilio WhatsApp API** | Entrada y salida de mensajes |
 | Persistencia | **SQLAlchemy + Pydantic** | Modelos y validación |
-| Scripts | Python CLI | Ingesta de datos y entrenamiento local |
+| Scripts | **Python CLI** | Ingesta de datos y entrenamiento local |
 
 ---
 
 ## 🧬 Estructura del Proyecto
 
-```
+```text
 bo-bot/
 ├─ backend/
 │  ├─ app/
@@ -102,66 +103,3 @@ bo-bot/
 │  ├─ load_vehicles_from_csv.py  # Carga el catálogo en SQLite
 │  └─ load_leads_from_excel.py   # Carga leads ficticios
 └─ requirements.txt
-```
-
----
-
-## 🚀 Instalación y Uso
-
-```bash
-git clone https://github.com/<tuusuario>/bo-bot.git
-cd bo-bot
-python -m venv .venv
-.\.venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-Crea un archivo `.env`:
-
-```env
-GEMINI_API_KEY=tu_api_key
-SQLITE_URL=sqlite:///./data/bob_agent.db
-CHROMA_DB_DIR=./data/chroma_db
-CHROMA_COLLECTION_NAME=bob_knowledge_base
-TWILIO_ACCOUNT_SID=...
-TWILIO_AUTH_TOKEN=...
-```
-
-Inicializa datos:
-
-```bash
-python scripts/load_vehicles_from_csv.py
-python scripts/ingest_knowledge_base.py
-uvicorn backend.app.main:app --reload
-```
-
----
-
-## 💬 Endpoints Principales
-
-| Endpoint | Descripción |
-|-----------|--------------|
-| `POST /api/v1/chat` | Chat principal (RAG + Scoring) |
-| `POST /api/v1/twilio/whatsapp` | Webhook para mensajes de WhatsApp |
-| `GET /api/v1/metrics/summary` | Métricas generales del agente |
-| `GET /api/v1/leads` | Listado y filtro de leads |
-| `GET /api/v1/vehicles/list` | Catálogo de autos/maquinaria |
-
----
-
-## 📈 Roadmap
-
-- ✅ Módulo de RAG embebido (Chroma + Gemini)  
-- ✅ Lead Scoring dinámico (criterios .txt)  
-- ✅ Integración Twilio  
-- 🔜 Dashboard de métricas (Streamlit)  
-- 🔜 Autenticación JWT para asesores  
-
----
-
-## 🧑‍💻 Autor
-
-**Camilo Parraga Piñin**
-**Gerardo Chavez Ayala**
-**Alexander Aquino Pérez**
-Proyecto presentado en la **Hackatón SomosBOB 2025**
