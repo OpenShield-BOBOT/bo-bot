@@ -8,7 +8,6 @@ class LeadCreate(BaseModel):
     session_id: str
     channel: str = "web"
 
-    # Campos similares al Excel
     nombres: str
     apellidos: str
     dni: Optional[str] = None
@@ -16,7 +15,6 @@ class LeadCreate(BaseModel):
     correo_electronico: EmailStr
     ciudad: str
 
-    # Score calculado por el backend
     lead_score: Optional[str] = None
 
 

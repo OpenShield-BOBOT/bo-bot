@@ -239,9 +239,6 @@ def _remember_session_filters(session_id: str, filters: Dict[str, Any]) -> None:
     FILTER_MEMORY[session_id] = snapshot
 
 
-# =================================================
-# 💬 Orquestador principal para el chat (catálogo)
-# =================================================
 def try_answer_vehicle_question(
     user_message: str,
     session: Session,
@@ -261,7 +258,6 @@ def try_answer_vehicle_question(
     if not text:
         return False, None
 
-    # 0️⃣ Fallback robusto por PLACA (sin depender del parser/LLM)
     plate_from_regex = _extract_plate(text)
     if plate_from_regex:
         vehicle = get_vehicle_by_plate(session, plate_from_regex)
@@ -300,16 +296,13 @@ def try_answer_vehicle_question(
         )
         answer += "\nSi quieres, puedo ayudarte a comparar este vehículo con otros similares en precio o año."
 
-        # También recordamos filtros implícitos de esta “consulta por placa”
         _remember_session_filters(session_id, {"placa": plate_from_regex})
         return True, answer
 
-    # 1️⃣ Parsear intención y filtros con Gemini
     parsed = parse_vehicle_question_with_llm(text)
     print(f"🔎 [VehicleParser] Parsed → {parsed}")
 
     if not parsed.get("is_vehicle_question", False):
-        # No es claramente una pregunta de catálogo de vehículos
         return False, None
 
     intent = (parsed.get("intent") or "unknown").lower()
@@ -320,17 +313,12 @@ def try_answer_vehicle_question(
     if intent not in allowed_intents:
         return False, None
 
-    # Normalización mínima de strings
     for key in ("marca", "modelo", "ubicacion", "categoria", "tipo_subasta"):
         if filters.get(key):
             filters[key] = str(filters[key]).strip()
 
-    # 2️⃣ Mezclar con filtros recordados de la sesión (memoria)
     filters = _merge_with_session_filters(session_id, filters)
 
-    # -------------------------------------------------
-    # 🔹 INTENT: DETAIL (detalle por placa o filtros específicos)
-    # -------------------------------------------------
     if intent == "detail":
         placa = filters.get("placa")
         vehicle: Optional[Vehicle] = None
@@ -339,7 +327,6 @@ def try_answer_vehicle_question(
             if placa:
                 vehicle = get_vehicle_by_plate(session, placa)
 
-            # Si no hay placa pero sí filtros, usamos el primero del listado
             if not vehicle:
                 vehicles = list_vehicles(session, filters, limit=1)
                 vehicle = vehicles[0] if vehicles else None
@@ -353,7 +340,6 @@ def try_answer_vehicle_question(
                 "de BOB Subastas."
             )
 
-        # Recordamos filtros que llevaron a este resultado
         _remember_session_filters(session_id, filters)
 
         price = (
@@ -386,9 +372,6 @@ def try_answer_vehicle_question(
         answer += "\nSi quieres, puedo ayudarte a comparar este vehículo con otros similares en precio o año."
         return True, answer
 
-    # -------------------------------------------------
-    # 🔹 INTENT: COUNT (¿cuántos vehículos...?)
-    # -------------------------------------------------
     if intent == "count":
         try:
             count = count_vehicles(session, filters)
@@ -396,7 +379,6 @@ def try_answer_vehicle_question(
             print(f"⚠️ [VehicleQA] Error en count_vehicles: {e}")
             return False, None
 
-        # Recordamos filtros utilizados aunque el conteo sea 0
         _remember_session_filters(session_id, filters)
 
         marca = filters.get("marca")
@@ -431,9 +413,6 @@ def try_answer_vehicle_question(
 
         return True, answer
 
-    # -------------------------------------------------
-    # 🔹 INTENT: LIST (lista de vehículos según filtros)
-    # -------------------------------------------------
     if intent == "list":
         try:
             vehicles = list_vehicles(session, filters, limit=5)
@@ -441,7 +420,6 @@ def try_answer_vehicle_question(
             print(f"⚠️ [VehicleQA] Error en list_vehicles: {e}")
             return False, None
 
-        # Recordamos filtros usados (clave para "afínalo por precio...")
         _remember_session_filters(session_id, filters)
 
         if not vehicles:
@@ -466,9 +444,6 @@ def try_answer_vehicle_question(
         )
         return True, answer
 
-    # -------------------------------------------------
-    # 🔹 INTENT: STATS (promedios, etc.)
-    # -------------------------------------------------
     if intent == "stats":
         try:
             stats = vehicle_stats(session, filters)
@@ -476,7 +451,6 @@ def try_answer_vehicle_question(
             print(f"⚠️ [VehicleQA] Error en vehicle_stats: {e}")
             return False, None
 
-        # Recordamos filtros utilizados
         _remember_session_filters(session_id, filters)
 
         count = stats["count"]
@@ -502,5 +476,4 @@ def try_answer_vehicle_question(
         answer = " ".join(partes) + " Si quieres, puedo mostrarte algunos ejemplos específicos."
         return True, answer
 
-    # Si por alguna razón llegamos aquí, mejor que responda el RAG
     return False, None

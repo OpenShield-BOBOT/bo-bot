@@ -1,4 +1,6 @@
 from time import perf_counter
+import re  # 👈 ya lo tenías
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends
 from sqlmodel import Session, select
@@ -12,7 +14,7 @@ from backend.app.core.lead_scoring import (
     evaluate_lead,
     total_points_to_category,
     HOT_THRESHOLD,
-    FALLBACK_SCORE,  # usamos el mismo fallback (20) que en lead_scoring.py
+    FALLBACK_SCORE,
 )
 
 router = APIRouter(
@@ -22,13 +24,34 @@ router = APIRouter(
 
 pipeline = RAGPipeline()
 
+SESSION_TIMEOUT_MINUTES_WEB = 2
+
+
+
+def strip_simple_markdown(text: str) -> str:
+    """
+    Limpia el Markdown básico para que el frontend (Angular) reciba texto plano.
+    - Quita **negritas**, *cursivas* y _cursivas_
+    - Convierte bullets tipo '* ' o '- ' al inicio de línea en '- '
+    - Convierte links [texto](url) en solo 'texto'
+    """
+    if not text:
+        return text
+
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+
+    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+
+    text = re.sub(r"_(.+?)_", r"\1", text)
+
+    text = re.sub(r"(?<!\S)\*(?!\s)(.+?)(?<!\s)\*(?!\S)", r"\1", text)
+
+    text = re.sub(r"^\s*[\*\-]\s+", "- ", text, flags=re.MULTILINE)
+
+    return text.strip()
+
 
 def build_conversation_text(prev_interactions: list[Interaction], new_message: str) -> str:
-    """
-    Construye un texto con TODOS los mensajes del usuario en la sesión,
-    más el mensaje actual. No incluimos los mensajes del bot para no
-    “contaminar” el scoring.
-    """
     user_msgs: list[str] = []
 
     for it in prev_interactions:
@@ -47,15 +70,10 @@ def user_clearly_requests_advisor(
     prev_interactions: list[Interaction],
     new_message: str,
 ) -> bool:
-    """
-    Detecta si el usuario está pidiendo explícitamente hablar con un asesor
-    o si está respondiendo afirmativamente a una oferta de asesor del bot.
-    """
     msg = (new_message or "").strip().lower()
     if not msg:
         return False
 
-    # 1) Frases directas donde el usuario pide asesor/contacto
     direct_phrases = [
         "hablar con un asesor",
         "quiero un asesor",
@@ -66,7 +84,6 @@ def user_clearly_requests_advisor(
         "me contacten",
         "quiero contacto",
         "quiero que me llamen",
-        "quiero que me llamen",
         "llámenme",
         "llamame",
         "contactarme",
@@ -75,17 +92,14 @@ def user_clearly_requests_advisor(
     if any(p in msg for p in direct_phrases):
         return True
 
-    # 2) Confirmación corta después de que el bot ofreció asesor
     if prev_interactions:
         last_bot_resp = prev_interactions[-1].bot_response or ""
         last_bot_lower = last_bot_resp.lower()
 
-        # ¿El bot habló de asesor/contacto en el último mensaje?
         if any(
             kw in last_bot_lower
             for kw in ["asesor", "que te contacten", "que te contactemos", "derivarte con un asesor"]
         ):
-            # Y el usuario responde algo tipo "sí", "ok", "si por favor", "claro", etc.
             short_affirmatives = [
                 "si",
                 "sí",
@@ -98,7 +112,6 @@ def user_clearly_requests_advisor(
                 "sí por favor",
                 "por favor",
             ]
-            # Mensajes cortos que contengan alguna de estas palabras
             if len(msg) <= 30 and any(a in msg for a in short_affirmatives):
                 return True
 
@@ -110,17 +123,6 @@ async def chat_endpoint(
     payload: ChatMessage,
     session: Session = Depends(get_session),
 ) -> ChatResponse:
-    """
-    Endpoint principal de chat.
-
-    Prioridad:
-      1) RAG con Chroma (docs embebidos).
-      2) Catálogo de vehículos (CSV → tabla Vehicle).
-      3) API en vivo de BOB (sublots/details).
-
-    Siempre se evalúa scoring sobre TODA la conversación.
-    """
-
     print("\n==============================")
     print(f"💬 [NUEVO MENSAJE] Usuario → {payload.message}")
     print(f"🧩 Session ID: {payload.session_id}")
@@ -128,39 +130,40 @@ async def chat_endpoint(
 
     start = perf_counter()
 
-    # ---------------------------------
-    # Historial de la sesión
-    # ---------------------------------
     prev_interactions = session.exec(
         select(Interaction)
         .where(Interaction.session_id == payload.session_id)
         .order_by(Interaction.created_at.asc())
     ).all()
 
+    now = datetime.utcnow()
+
     if prev_interactions:
-        score_before = prev_interactions[-1].lead_score_numeric or 0
+        last_ts = prev_interactions[-1].created_at
+        if last_ts and (now - last_ts) > timedelta(minutes=SESSION_TIMEOUT_MINUTES_WEB):
+            print("⏲️ [WEB] Sesión expirada por inactividad, reseteando historial.")
+            prev_interactions = []
+            score_before = 0
+        else:
+            score_before = prev_interactions[-1].lead_score_numeric or 0
     else:
         score_before = 0
 
     print(f"📊 Score previo de sesión: {score_before}")
 
-    # Texto completo de conversación para scoring
     conversation_text = build_conversation_text(prev_interactions, payload.message)
 
-    # Flag: ¿el usuario pidió claramente un asesor?
     user_wants_advisor = user_clearly_requests_advisor(prev_interactions, payload.message)
     print(f"📞 ¿Usuario pidió asesor explícitamente? → {'sí' if user_wants_advisor else 'no'}")
 
-    # ----------------------------------------
-    # 1️⃣ RAG con Chroma (prioridad #1)
-    # ----------------------------------------
     print("🤖 [PIPELINE] Ejecutando RAG con Gemini...")
 
-    # Historial reducido para el LLM (últimos 3 turnos)
     chat_history = []
     for it in prev_interactions[-3:]:
-        chat_history.append({"role": "user", "content": it.user_message})
-        chat_history.append({"role": "assistant", "content": it.bot_response})
+        if it.user_message:
+            chat_history.append({"role": "user", "content": it.user_message})
+        if it.bot_response:
+            chat_history.append({"role": "assistant", "content": it.bot_response})
     print(f"🕓 Historial incluido en RAG: {len(chat_history)} mensajes")
 
     rag_result = await pipeline.answer(
@@ -177,10 +180,6 @@ async def chat_endpoint(
     final_answer = rag_answer
     used_context = rag_used_context
 
-    # ---------------------------------------------------
-    # 2️⃣ Si RAG NO usó contexto → intentamos vehículos
-    #     (catálogo CSV → tabla Vehicle + API BOB)
-    # ---------------------------------------------------
     if not rag_used_context:
         print("🚗 [VEHICLE_QA] RAG no usó contexto, probando módulo de vehículos...")
         handled, vehicle_answer = try_answer_vehicle_question(
@@ -191,17 +190,12 @@ async def chat_endpoint(
         if handled:
             print("🚗 [VEHICLE_QA] La pregunta fue respondida con datos tabulares / API BOB.")
             final_answer = vehicle_answer or ""
-            used_context = False  # viene de tablas / API, no de Chroma
+            used_context = False
         else:
             print("🚗 [VEHICLE_QA] No aplicó vehículo/subastas, se mantiene respuesta de RAG.")
 
-    # --------------------------------
-    # 3️⃣ Scoring sobre la conversación
-    # --------------------------------
     detailed = evaluate_lead(conversation_text)
 
-    # Usamos el mismo fallback estándar que en evaluate_lead (20),
-    # por si por alguna razón no llega 'total' en el dict.
     total = detailed.get("total", FALLBACK_SCORE)
     try:
         total = int(total)
@@ -210,7 +204,6 @@ async def chat_endpoint(
 
     session_category = total_points_to_category(total)
 
-    # 🔥 Si el usuario pidió asesor explícitamente, forzamos score caliente
     if user_wants_advisor and total < HOT_THRESHOLD:
         print(
             "📞 El usuario ha solicitado contacto con un asesor. "
@@ -222,11 +215,9 @@ async def chat_endpoint(
     print(f"🏷️ Lead (detallado): {detailed.get('categoria', 'frio').upper()} ({total} pts)")
     print(f"💡 Categoría global (simple): {session_category.upper()}")
 
-    # ¿Acaba de cruzar el umbral caliente?
     crossed_hot_now = score_before < HOT_THRESHOLD <= total
     if crossed_hot_now:
         print("🔥 El lead acaba de cruzar el umbral CALIENTE.")
-        # 👉 Aquí SÍ mencionamos asesores de forma explícita para el canal web
         final_answer += (
             "\n\n🟢 Veo que tienes **alta intención de compra**. "
             "Si quieres, puedo derivarte con un asesor comercial de BOB Subastas "
@@ -239,11 +230,12 @@ async def chat_endpoint(
     response_time_ms = (end - start) * 1000.0
     print(f"⏱️ Tiempo total: {response_time_ms:.0f} ms")
 
-    # Guardar interacción
+    clean_answer = strip_simple_markdown(final_answer)
+
     interaction = Interaction(
         session_id=payload.session_id,
         user_message=payload.message,
-        bot_response=final_answer,
+        bot_response=clean_answer,
         lead_score=session_category,
         lead_score_numeric=total,
         response_time_ms=response_time_ms,
@@ -255,7 +247,7 @@ async def chat_endpoint(
     print("✅ Respuesta enviada al frontend.\n")
 
     result_out = {
-        "answer": final_answer,
+        "answer": clean_answer,
         "lead_score": session_category,
         "used_context": used_context,
         "response_time_ms": response_time_ms,

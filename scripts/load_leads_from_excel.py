@@ -4,13 +4,12 @@ from pathlib import Path
 import pandas as pd
 from sqlmodel import Session, delete, select
 
-# Aseguramos que el backend sea importable al ejecutar el script
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
-from backend.app.db.session import engine, init_db  # noqa: E402
-from backend.app.db.models import Lead             # noqa: E402
+from backend.app.db.session import engine, init_db
+from backend.app.db.models import Lead
 
 
 def load_leads_from_excel(xlsx_path: Path, truncate_excel_leads: bool = True) -> None:
@@ -26,7 +25,6 @@ def load_leads_from_excel(xlsx_path: Path, truncate_excel_leads: bool = True) ->
 
     print(f"📥 Leyendo Excel: {xlsx_path}")
 
-    # Leemos columnas como texto donde importa (DNI, Teléfono)
     df = pd.read_excel(
         xlsx_path,
         dtype={
@@ -71,7 +69,6 @@ def load_leads_from_excel(xlsx_path: Path, truncate_excel_leads: bool = True) ->
             email = str(row.get("Correo Electrónico") or "").strip() or None
             ciudad = str(row.get("Ciudad") or "").strip() or None
 
-            # session_id: usamos el DNI si existe, si no un fallback
             if dni:
                 session_id = f"excel-{dni}"
             else:
@@ -79,14 +76,14 @@ def load_leads_from_excel(xlsx_path: Path, truncate_excel_leads: bool = True) ->
 
             lead = Lead(
                 session_id=session_id,
-                channel="excel_import",  # 👈 para distinguirlos
+                channel="excel_import",
                 nombres=nombres,
                 apellidos=apellidos,
                 dni=dni,
                 telefono=telefono,
                 correo_electronico=email,
                 ciudad=ciudad,
-                lead_score="caliente",   # o None, según cómo los quieras catalogar
+                lead_score="caliente",
                 status="open",
             )
 
@@ -94,7 +91,6 @@ def load_leads_from_excel(xlsx_path: Path, truncate_excel_leads: bool = True) ->
 
         session.commit()
 
-        # Conteo final (usamos len(list(...)) en vez de .count())
         all_leads_result = session.exec(select(Lead))
         total = len(list(all_leads_result))
 
@@ -108,7 +104,6 @@ def load_leads_from_excel(xlsx_path: Path, truncate_excel_leads: bool = True) ->
 
 
 def main():
-    # Ruta por defecto: data/datos_ficticios_completo.xlsx (desde la raíz del proyecto)
     xlsx_path = ROOT_DIR / "data" / "datos_ficticios_completo.xlsx"
     load_leads_from_excel(xlsx_path, truncate_excel_leads=True)
 

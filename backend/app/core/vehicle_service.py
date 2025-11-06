@@ -1,5 +1,3 @@
-# backend/app/core/vehicle_service.py
-
 from typing import Tuple, Optional
 
 from sqlmodel import Session
@@ -169,11 +167,9 @@ def try_answer_vehicle_question(
 
     msg_lower = text.lower()
 
-    # 0️⃣ Si es claramente pregunta de PROCESO, que lo maneje el RAG
     if _looks_like_process_question(msg_lower):
         return False, None
 
-    # 1️⃣ CATÁLOGO DEL HACKATHON (tabla Vehicle) – prioridad sobre API BOB
     handled, answer = qa_from_catalog(
         user_message=text,
         session=session,
@@ -182,7 +178,6 @@ def try_answer_vehicle_question(
     if handled:
         return True, answer
 
-    # 2️⃣ SUBASTAS EN VIVO (API BOB) → sólo si es “qué subastas / lotes hay...”
     if _looks_like_live_auction_question(msg_lower):
         sublots = get_live_sublots()
         if not sublots:
@@ -205,7 +200,6 @@ def try_answer_vehicle_question(
         price_max = meta.get("price_max")
         intent_count = meta.get("intent_count", False)
 
-        # 2.a) No encontramos nada con esos filtros
         if total_filt == 0:
             partes = ["Revisé las subastas activas de BOB Subastas"]
 
@@ -275,5 +269,4 @@ def try_answer_vehicle_question(
 
         return True, answer
 
-    # 3️⃣ No es claramente de vehículos/subastas → dejamos la respuesta de RAG
     return False, None

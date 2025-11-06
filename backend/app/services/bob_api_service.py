@@ -1,5 +1,3 @@
-# backend/app/services/bob_api_service.py
-
 import re
 from typing import List, Dict, Any, Tuple, Optional
 
@@ -8,9 +6,6 @@ import requests
 BOB_API_URL = "https://apiv3.somosbob.com/v3/sublots/details"
 
 
-# -------------------------------------------------
-# 🌐 Llamada cruda a la API de BOB
-# -------------------------------------------------
 def get_live_sublots() -> List[Dict[str, Any]]:
     """Obtiene información en tiempo real de las subastas de BOB."""
     try:
@@ -19,7 +14,6 @@ def get_live_sublots() -> List[Dict[str, Any]]:
         response.raise_for_status()
         data = response.json()
 
-        # La API podría devolver lista directa o un dict con 'items'/'data'
         if isinstance(data, dict):
             data = data.get("items") or data.get("data") or []
 
@@ -34,9 +28,6 @@ def get_live_sublots() -> List[Dict[str, Any]]:
         return []
 
 
-# -------------------------------------------------
-# 📝 Formateo de un sublote para mostrar al usuario
-# -------------------------------------------------
 def format_sublot_summary(s: Dict[str, Any]) -> str:
     """
     Formatea un sublote en texto legible para respuestas del chatbot.
@@ -70,9 +61,6 @@ def format_sublot_summary(s: Dict[str, Any]) -> str:
     return f"**{header}**\n{line2}\n{line3}\n[Ver más]({link})"
 
 
-# -------------------------------------------------
-# 🔍 Detección de filtros a partir del mensaje
-# -------------------------------------------------
 def _detect_brand_from_message(
     msg_lower: str,
     sublots: List[Dict[str, Any]],
@@ -109,7 +97,7 @@ def _detect_model_from_message(
 
 def _detect_vehicle_type_slug(msg_lower: str) -> Optional[str]:
     if any(w in msg_lower for w in ["camioneta", "camionetas", "pickup"]):
-        return "autos"  # se matchea contra slugs tipo 'autos-camionetas'
+        return "autos"
     if any(w in msg_lower for w in ["auto", "carro", "sedan", "sedán"]):
         return "autos"
     if "maquinaria" in msg_lower or "grua" in msg_lower or "grúa" in msg_lower:
@@ -140,8 +128,6 @@ def _detect_modality(msg_lower: str) -> Optional[str]:
     """
     if "venta directa" in msg_lower:
         return "venta-directa"
-    # Antes devolvíamos "subasta" aquí, lo cual filtraba demasiado
-    # Ahora, si solo dice "subasta" o "subastas", NO filtramos por modalidad.
     return None
 
 
@@ -176,9 +162,6 @@ def _detect_count_intent(msg_lower: str) -> bool:
     )
 
 
-# -------------------------------------------------
-# 🎯 Filtro principal para sublotes según mensaje
-# -------------------------------------------------
 def filter_sublots_for_message(
     user_message: str,
     sublots: List[Dict[str, Any]],
@@ -196,21 +179,18 @@ def filter_sublots_for_message(
 
     filtered = sublots
 
-    # Marca
     if brand:
         filtered = [
             s for s in filtered
             if (s.get("brand") or "").strip().lower() == brand
         ]
-
-    # Modelo
+    
     if model:
         filtered = [
             s for s in filtered
             if (s.get("model") or "").strip().lower() == model
         ]
 
-    # Tipo / categoría base
     if vehicle_type_slug:
         def matches_type(s: Dict[str, Any]) -> bool:
             cat = (s.get("category_base") or {}).get("slug") or ""
@@ -220,14 +200,12 @@ def filter_sublots_for_message(
 
         filtered = [s for s in filtered if matches_type(s)]
 
-    # Ciudad / ubicación
     if city:
         filtered = [
             s for s in filtered
             if city in (s.get("location") or "").upper()
         ]
 
-    # Modalidad
     if modality_slug:
         def matches_modality(s: Dict[str, Any]) -> bool:
             mod = (s.get("modality") or {}).get("slug") or ""
@@ -241,7 +219,6 @@ def filter_sublots_for_message(
 
         filtered = [s for s in filtered if matches_modality(s)]
 
-    # Precio máximo
     if price_max is not None:
         def parse_base_price(s: Dict[str, Any]) -> Optional[float]:
             raw = s.get("basePrice")
@@ -255,7 +232,6 @@ def filter_sublots_for_message(
         filtered_tmp = []
         for s in filtered:
             p = parse_base_price(s)
-            # 👉 Si el usuario habló de precio máximo, ignoramos lotes sin precio
             if p is not None and p <= price_max:
                 filtered_tmp.append(s)
         filtered = filtered_tmp

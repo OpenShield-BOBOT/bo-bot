@@ -11,7 +11,7 @@ def init_db() -> None:
     Inicializa las tablas en la base de datos.
     Se llamará en el evento de startup de FastAPI.
     """
-    import backend.app.db.models  # noqa: F401
+    import backend.app.db.models
     SQLModel.metadata.create_all(bind=engine)
 
 

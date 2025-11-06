@@ -5,19 +5,17 @@ from typing import List, Tuple
 
 import chromadb
 import pandas as pd
-import google.generativeai as genai  # 👈 NUEVO
+import google.generativeai as genai
 
-# Aseguramos que el backend sea importable al ejecutar el script
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
-from backend.app.core.config import get_settings  # noqa: E402
+from backend.app.core.config import get_settings
 
 
 settings = get_settings()
 
-# Configurar Gemini
 if settings.gemini_api_key:
     genai.configure(api_key=settings.gemini_api_key)
 else:
@@ -28,12 +26,10 @@ else:
 
 DATA_RAW_DIR = ROOT_DIR / "data" / "raw"
 CHROMA_DIR = Path(settings.chroma_db_dir)
-CHROMA_COLLECTION_NAME = settings.chroma_collection_name  # 👈 Usamos config
+CHROMA_COLLECTION_NAME = settings.chroma_collection_name
 
 
-# -------------------------------
-# Utilidades de lectura y chunking
-# -------------------------------
+
 
 def read_txt_files() -> List[Tuple[Path, str]]:
     """Lee todos los .txt en data/raw."""
@@ -108,7 +104,6 @@ def read_faqs_csv() -> List[Tuple[Path, str]]:
                 f"Respuesta oficial: {respuesta}"
             )
 
-        # Usamos siempre el mismo path (faqs_bob.csv) como "origen" lógico
         docs.append((csv_path, texto))
 
     print(f"✅ FAQs cargadas desde CSV: {len(docs)} filas útiles")
@@ -137,10 +132,6 @@ def chunk_text(text: str, chunk_size: int = 800, overlap: int = 200) -> List[str
     return chunks
 
 
-# -------------------------------
-# Embeddings con Gemini
-# -------------------------------
-
 def embed_texts(texts: List[str]) -> List[List[float]]:
     """
     Genera embeddings usando Gemini (mismo modelo que el pipeline RAG).
@@ -157,7 +148,6 @@ def embed_texts(texts: List[str]) -> List[List[float]]:
 
     for text in texts:
         try:
-            # Misma forma que usas en backend/app/rag/pipeline.py
             result = genai.embed_content(
                 model=settings.gemini_embedding_model,
                 content=text,
@@ -170,10 +160,6 @@ def embed_texts(texts: List[str]) -> List[List[float]]:
     return embeddings
 
 
-# -------------------------------
-# Chroma: creación de la colección
-# -------------------------------
-
 def get_chroma_collection():
     """
     Crea (o recrea) una base de datos Chroma persistente en CHROMA_DIR
@@ -183,7 +169,6 @@ def get_chroma_collection():
 
     client = chromadb.PersistentClient(path=str(CHROMA_DIR))
 
-    # Opcional: borrar colección previa para reindexar desde cero
     try:
         client.delete_collection(CHROMA_COLLECTION_NAME)
     except Exception:
@@ -192,10 +177,6 @@ def get_chroma_collection():
     collection = client.get_or_create_collection(name=CHROMA_COLLECTION_NAME)
     return client, collection
 
-
-# -------------------------------
-# Pipeline de ingestión
-# -------------------------------
 
 def ingest():
     print("📂 Leyendo archivos de texto desde:", DATA_RAW_DIR)
@@ -224,7 +205,6 @@ def ingest():
     all_texts: List[str] = []
     all_metadatas: List[dict] = []
 
-    # 1. Leer y chunkear
     for file_path, text in docs:
         rel_path = file_path.relative_to(ROOT_DIR)
         chunks = chunk_text(text)
@@ -244,7 +224,6 @@ def ingest():
 
     print(f"🧠 Total de chunks a indexar: {len(all_texts)}")
 
-    # 2. Generar embeddings en batches
     batch_size = 32
     for start in range(0, len(all_texts), batch_size):
         end = start + batch_size
@@ -255,7 +234,6 @@ def ingest():
         print(f"   → Embeddings {start} - {end} ...", end="", flush=True)
         batch_embeddings = embed_texts(batch_texts)
 
-        # 3. Guardar en Chroma
         collection.add(
             ids=batch_ids,
             documents=batch_texts,
@@ -264,7 +242,6 @@ def ingest():
         )
         print(" OK")
 
-    # 4. Info final
     try:
         count = collection.count()
     except Exception:

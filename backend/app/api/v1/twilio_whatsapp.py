@@ -1,13 +1,14 @@
-# backend/app/api/v1/twilio_whatsapp.py
 from time import perf_counter
 from typing import List
+import time  # 👈 NUEVO
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Form, BackgroundTasks
 from fastapi.responses import Response
 from sqlmodel import Session, select
 
 from backend.app.rag.pipeline import RAGPipeline
-from backend.app.db.session import engine  # usamos engine para crear Session
+from backend.app.db.session import engine
 from backend.app.db.models import Interaction, Lead
 from backend.app.integrations.twilio_client import (
     notify_advisor_new_hot_lead,
@@ -19,7 +20,7 @@ from backend.app.core.lead_scoring import (
     HOT_THRESHOLD,
     FALLBACK_SCORE,
 )
-from backend.app.core.vehicle_service import try_answer_vehicle_question  # 👈 VEHÍCULOS
+from backend.app.core.vehicle_service import try_answer_vehicle_question
 
 router = APIRouter(
     prefix="/twilio",
@@ -28,15 +29,10 @@ router = APIRouter(
 
 pipeline = RAGPipeline()
 
+SESSION_TIMEOUT_MINUTES_WA = 30
 
-# =====================================================
-# 🧱 Helpers comunes
-# =====================================================
+
 def build_conversation_text(prev_interactions: List[Interaction], new_message: str) -> str:
-    """
-    Construye un texto con TODOS los mensajes del usuario en la sesión
-    (solo usuario), más el mensaje actual.
-    """
     user_msgs: list[str] = []
 
     for it in prev_interactions:
@@ -55,15 +51,10 @@ def user_clearly_requests_advisor_wa(
     prev_interactions: List[Interaction],
     new_message: str,
 ) -> bool:
-    """
-    Detecta si el usuario está pidiendo explícitamente hablar con un asesor
-    o si está respondiendo afirmativamente a una oferta de asesor del bot.
-    """
     msg = (new_message or "").strip().lower()
     if not msg:
         return False
 
-    # 1) Frases directas de solicitud de asesor/contacto
     direct_phrases = [
         "hablar con un asesor",
         "quiero un asesor",
@@ -83,12 +74,10 @@ def user_clearly_requests_advisor_wa(
     if any(p in msg for p in direct_phrases):
         return True
 
-    # 2) Confirmación corta después de una oferta de asesor del bot
     if prev_interactions:
         last_bot_resp = prev_interactions[-1].bot_response or ""
         last_bot_lower = last_bot_resp.lower()
 
-        # ¿El bot habló de asesor/contacto en el último mensaje?
         if any(
             kw in last_bot_lower
             for kw in ["asesor", "que un asesor", "que te contacte", "que se ponga en contacto"]
@@ -111,23 +100,65 @@ def user_clearly_requests_advisor_wa(
     return False
 
 
-# =============================================
-# 🧵 Tarea background: datos de lead por WhatsApp
-# =============================================
+def inactivity_ping_task(
+    *,
+    session_id: str,
+    user_phone: str,
+    scheduled_at_iso: str,
+    wait_seconds: int = 120,
+) -> None:
+    """
+    Espera X segundos y, si el usuario NO ha enviado ningún mensaje nuevo
+    desde `scheduled_at`, le manda un ping de '¿sigues ahí?'.
+    """
+    print(
+        f"⏲️ [WA] (BG) Programando ping de inactividad para {user_phone} "
+        f"en {wait_seconds} segundos..."
+    )
+
+    try:
+        scheduled_at = datetime.fromisoformat(scheduled_at_iso)
+    except Exception:
+        scheduled_at = datetime.utcnow()
+
+    time.sleep(wait_seconds)
+
+    with Session(engine) as session:
+        last_user_msg = session.exec(
+            select(Interaction)
+            .where(
+                (Interaction.session_id == session_id)
+                & (Interaction.user_message != None)
+                & (Interaction.created_at > scheduled_at)
+            )
+            .order_by(Interaction.created_at.desc())
+        ).first()
+
+        if last_user_msg:
+            print("✅ [WA] (BG) El usuario respondió, no enviamos ping de inactividad.")
+            return
+
+    ping_text = (
+        "👋 Solo quería confirmar si sigues por aquí.\n\n"
+        "Si aún necesitas ayuda con las subastas o los vehículos de BOB Subastas, "
+        "puedes escribirme y seguimos 😉"
+    )
+    send_whatsapp_message(
+        to_number=user_phone,
+        body=ping_text,
+    )
+    print(f"📨 [WA] (BG) Ping de inactividad enviado a {user_phone}.")
+
+
 def process_lead_data_message_bg(
     *,
     session_id: str,
     user_phone: str,
     incoming_text: str,
 ) -> None:
-    """
-    Versión en background de lo que antes hacía handle_lead_data_message.
-    Ahora NO devolvemos TwiML; enviamos mensaje con la API de Twilio.
-    """
     print(f"📥 [WA] (BG) Intentando interpretar mensaje como datos de lead: '{incoming_text}'")
 
     parts = [p.strip() for p in incoming_text.split(";")]
-    # Esperamos mínimo: Nombres, Apellidos, DNI, Teléfono, Correo, Ciudad (6 campos)
     if len(parts) < 5:
         msg = (
             "❌ No pude entender tus datos.\n\n"
@@ -174,9 +205,7 @@ def process_lead_data_message_bg(
         )
         return
 
-    # A partir de aquí ya necesitamos BD
     with Session(engine) as session:
-        # Buscamos un Lead abierto para esta sesión + canal
         lead = session.exec(
             select(Lead).where(
                 (Lead.session_id == session_id)
@@ -186,7 +215,6 @@ def process_lead_data_message_bg(
         ).first()
 
         if not lead:
-            # Si no existía, creamos uno nuevo (asumimos que es caliente)
             lead = Lead(
                 session_id=session_id,
                 channel="whatsapp",
@@ -194,7 +222,6 @@ def process_lead_data_message_bg(
                 status="open",
             )
 
-        # Actualizamos campos estándar
         lead.nombres = nombres
         lead.apellidos = apellidos
         lead.dni = dni
@@ -219,7 +246,6 @@ def process_lead_data_message_bg(
             "Un asesor de BOB Subastas se pondrá en contacto contigo en breve. 🙌"
         )
 
-        # Guardamos interacción
         interaction = Interaction(
             session_id=session_id,
             user_message=incoming_text,
@@ -232,14 +258,12 @@ def process_lead_data_message_bg(
         session.add(interaction)
         session.commit()
 
-    # Notificamos al asesor AHORA que ya tenemos los datos completos
     notify_advisor_new_hot_lead(
         user_waid=user_phone,
         user_message="Usuario compartió sus datos de contacto por WhatsApp.",
         lead_score=lead.lead_score or "caliente",
     )
 
-    # Respondemos al usuario vía API de Twilio
     send_whatsapp_message(
         to_number=user_phone,
         body=confirm_msg,
@@ -247,53 +271,44 @@ def process_lead_data_message_bg(
     print("📨 [WA] (BG) Mensaje de confirmación enviado al usuario.")
 
 
-# ===========================================
-# 🧵 Tarea background: flujo normal del bot
-# ===========================================
 def process_normal_message_bg(
     *,
     session_id: str,
     user_phone: str,
     user_message: str,
 ) -> None:
-    """
-    Procesa en background el mensaje normal:
-      - carga historial
-      - RAG + módulo vehículos
-      - scoring
-      - posible solicitud de datos
-      - guarda interacción
-      - envía respuesta vía Twilio API
-    """
     print(f"\n🧵 [WA] (BG) Procesando mensaje: {user_message} (session_id={session_id})")
     start = perf_counter()
 
     with Session(engine) as session:
-        # Historial de la sesión
         prev_interactions = session.exec(
             select(Interaction)
             .where(Interaction.session_id == session_id)
             .order_by(Interaction.created_at.asc())
         ).all()
 
+        now = datetime.utcnow()
+
         if prev_interactions:
-            score_before = prev_interactions[-1].lead_score_numeric or 0
+            last_ts = prev_interactions[-1].created_at
+            if last_ts and (now - last_ts) > timedelta(minutes=SESSION_TIMEOUT_MINUTES_WA):
+                print("⏲️ [WA] Sesión expirada por inactividad, reseteando historial.")
+                prev_interactions = []
+                score_before = 0
+            else:
+                score_before = prev_interactions[-1].lead_score_numeric or 0
         else:
             score_before = 0
 
         print(f"📊 [WA] (BG) Score previo de sesión: {score_before}")
 
-        # Texto conversación completo para scoring
         conversation_text = build_conversation_text(prev_interactions, user_message)
 
-        # Flag: ¿el usuario pidió claramente un asesor?
         user_wants_advisor = user_clearly_requests_advisor_wa(prev_interactions, user_message)
         print(f"📞 [WA] (BG) ¿Usuario pidió asesor explícitamente? → {'sí' if user_wants_advisor else 'no'}")
 
-        # 1️⃣ RAG con Chroma (llamamos async desde sync con anyio)
         from anyio import run as anyio_run
 
-        # Historial reducido para el LLM (últimos 3 turnos)
         chat_history = []
         for it in prev_interactions[-3:]:
             if it.user_message:
@@ -318,7 +333,6 @@ def process_normal_message_bg(
         final_answer = rag_answer
         used_context = rag_used_context
 
-        # 2️⃣ Si RAG no usó contexto → probar vehículos
         if not rag_used_context:
             print("🚗 [WA][VEHICLE_QA] (BG) RAG no usó contexto, probando módulo de vehículos...")
             handled, vehicle_answer = try_answer_vehicle_question(
@@ -333,7 +347,6 @@ def process_normal_message_bg(
             else:
                 print("🚗 [WA][VEHICLE_QA] (BG) No aplicó vehículo/subastas, se mantiene respuesta de RAG.")
 
-        # 3️⃣ Scoring avanzado (conversación)
         detailed = evaluate_lead(conversation_text)
         total = detailed.get("total", FALLBACK_SCORE)
         try:
@@ -343,7 +356,6 @@ def process_normal_message_bg(
 
         session_category = total_points_to_category(total)
 
-        # Si el usuario PIDE asesor explícitamente, forzamos score caliente
         if user_wants_advisor and total < HOT_THRESHOLD:
             print(
                 "📞 [WA] (BG) El usuario ha solicitado contacto con un asesor. "
@@ -358,7 +370,6 @@ def process_normal_message_bg(
         )
         print(f"💡 [WA] (BG) Categoría global (simple): {session_category.upper()}")
 
-        # ¿Acaba de cruzar el umbral caliente en este mensaje?
         crossed_hot_now = score_before < HOT_THRESHOLD <= total
 
         if crossed_hot_now:
@@ -370,7 +381,6 @@ def process_normal_message_bg(
                 "Nombres; Apellidos; DNI; Teléfono; Correo; Ciudad"
             )
 
-            # Lead parcial
             existing_lead = session.exec(
                 select(Lead).where(
                     (Lead.session_id == session_id)
@@ -402,7 +412,6 @@ def process_normal_message_bg(
         response_time_ms = (end - start) * 1000.0
         print(f"⏱️ [WA] (BG) Tiempo total de procesamiento: {response_time_ms:.0f} ms")
 
-        # Fallback: nunca mandar respuesta vacía
         if not final_answer or not final_answer.strip():
             print("⚠️ [WA] (BG) final_answer llegó vacío, aplicando mensaje de fallback.")
             final_answer = (
@@ -411,7 +420,6 @@ def process_normal_message_bg(
                 "¿Me puedes repetir tu consulta o formularla de otra manera?"
             )
 
-        # Guardar interacción en la BD
         interaction = Interaction(
             session_id=session_id,
             user_message=user_message,
@@ -425,7 +433,6 @@ def process_normal_message_bg(
         session.commit()
         print(f"💾 [WA] (BG) Interacción guardada. Score actual: {total} ({session_category})")
 
-    # Por último, respondemos al usuario por la API de Twilio
     send_whatsapp_message(
         to_number=user_phone,
         body=final_answer,
@@ -433,27 +440,13 @@ def process_normal_message_bg(
     print(f"📨 [WA] (BG) Mensaje enviado al usuario {user_phone} vía API de Twilio.")
 
 
-# ===========================================
-# 🌐 WEBHOOK: súper ligero (Twilio-friendly)
-# ===========================================
 @router.post("/whatsapp")
 async def twilio_whatsapp_webhook(
     background_tasks: BackgroundTasks,
-    From: str = Form(...),   # número de WhatsApp (ej: whatsapp:+51...)
-    Body: str = Form(...),   # texto del mensaje del usuario
-    WaId: str = Form(None),  # id de WhatsApp (número sin prefijo 'whatsapp:')
+    From: str = Form(...),
+    Body: str = Form(...),
+    WaId: str = Form(None),
 ):
-    """
-    Webhook para recibir mensajes de WhatsApp vía Twilio.
-
-    AHORA:
-      - NO hace RAG ni scoring ni acceso pesado a BD.
-      - Solo normaliza datos, decide tipo de mensaje
-        y lanza tareas en background.
-      - Responde rápido a Twilio con un 202 vacío.
-    """
-
-    # Normalizamos identificadores
     session_id = WaId or From
     raw_contact = From.strip()
     if raw_contact.startswith("whatsapp:"):
@@ -468,7 +461,6 @@ async def twilio_whatsapp_webhook(
     print(f"🧩 Session ID: {session_id}")
     print("==============================")
 
-    # 0️⃣ Si detectamos ';', asumimos que son datos de contacto
     if ";" in user_message:
         background_tasks.add_task(
             process_lead_data_message_bg,
@@ -477,7 +469,6 @@ async def twilio_whatsapp_webhook(
             incoming_text=user_message,
         )
     else:
-        # 1️⃣ Lanzamos el flujo normal del bot en background
         background_tasks.add_task(
             process_normal_message_bg,
             session_id=session_id,
@@ -485,5 +476,13 @@ async def twilio_whatsapp_webhook(
             user_message=user_message,
         )
 
-    # 2️⃣ Twilio queda feliz: respondemos rápido sin TwiML
+        now_iso = datetime.utcnow().isoformat()
+        background_tasks.add_task(
+            inactivity_ping_task,
+            session_id=session_id,
+            user_phone=user_phone,
+            scheduled_at_iso=now_iso,
+            wait_seconds=120,
+        )
+
     return Response(content="", status_code=202)

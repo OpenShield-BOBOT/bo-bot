@@ -23,11 +23,9 @@ class Lead(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
 
-    # Identificador de conversación / tracking
     session_id: str
-    channel: str = Field(default="web")  # "web", "whatsapp", "excel_import", etc.
+    channel: str = Field(default="web")
 
-    # Campos equivalentes al Excel
     nombres: Optional[str] = None
     apellidos: Optional[str] = None
     dni: Optional[str] = None
@@ -35,9 +33,8 @@ class Lead(SQLModel, table=True):
     correo_electronico: Optional[str] = None
     ciudad: Optional[str] = None
 
-    # Metadata de score / estado
-    lead_score: Optional[str] = None  # "caliente", "templado", "frio", etc.
-    status: str = Field(default="open")  # "open" / "closed"
+    lead_score: Optional[str] = None
+    status: str = Field(default="open")
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -48,7 +45,6 @@ class Vehicle(SQLModel, table=True):
     """
     id: Optional[int] = Field(default=None, primary_key=True)
 
-    # Columnas tal cual vienen en el CSV
     title: str
     precio_base: Optional[float] = None
     tipo_moneda: Optional[str] = None

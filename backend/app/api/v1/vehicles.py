@@ -1,5 +1,3 @@
-# backend/app/api/v1/vehicles.py
-
 from typing import List, Optional, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -17,9 +15,6 @@ from backend.app.services.vehicles_service import (
 router = APIRouter(prefix="/vehicles", tags=["vehicles"])
 
 
-# ----------------------------
-# 📌 Helpers internos
-# ----------------------------
 def _build_filters_from_query(
     marca: Optional[str],
     modelo: Optional[str],
@@ -59,9 +54,6 @@ def _build_filters_from_query(
     return filters
 
 
-# ----------------------------
-# 🧱 Endpoints básicos
-# ----------------------------
 @router.get("/by-plate/{placa}", response_model=Vehicle)
 def api_get_vehicle_by_plate(
     placa: str,
@@ -94,9 +86,6 @@ def api_vehicle_summary_by_plate(
     return {"placa": placa, "summary": summary}
 
 
-# ----------------------------
-# 📋 Listado por filtros
-# ----------------------------
 @router.get("/list", response_model=List[Vehicle])
 def api_list_vehicles(
     marca: Optional[str] = Query(None),
@@ -138,9 +127,6 @@ def api_list_vehicles(
     return vehicles
 
 
-# ----------------------------
-# 📊 Stats sobre un conjunto
-# ----------------------------
 @router.get("/stats")
 def api_vehicle_stats(
     marca: Optional[str] = Query(None),

@@ -23,10 +23,9 @@ class Settings(BaseSettings):
     # === Configuración de Twilio ===
     twilio_account_sid: str | None = None
     twilio_auth_token: str | None = None
-    twilio_whatsapp_from: str | None = None   # ej: "whatsapp:+14155238886"
-    twilio_advisor_whatsapp: str | None = None  # ej: "whatsapp:+51TU_NUMERO"
+    twilio_whatsapp_from: str | None = None
+    twilio_advisor_whatsapp: str | None = None
 
-    # === Configuración general de Pydantic Settings ===
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

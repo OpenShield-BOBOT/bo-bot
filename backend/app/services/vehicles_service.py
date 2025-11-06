@@ -1,5 +1,3 @@
-# backend/app/services/vehicles_service.py
-
 from typing import List, Optional, Dict, Any
 
 from sqlmodel import Session, select
@@ -8,9 +6,6 @@ from sqlalchemy import func
 from backend.app.db.models import Vehicle
 
 
-# -------------------------------------------------
-# 🧱 Helpers de acceso directo
-# -------------------------------------------------
 def get_vehicle_by_plate(session: Session, placa: str) -> Optional[Vehicle]:
     """
     Busca un vehículo por placa (normalmente almacenada en minúsculas y sin espacios).
@@ -30,9 +25,6 @@ def get_base_price_by_plate(session: Session, placa: str) -> Optional[float]:
     return vehicle.precio_base
 
 
-# -------------------------------------------------
-# 🔍 Query genérica por filtros
-# -------------------------------------------------
 def _to_int(value: Any) -> Optional[int]:
     if value is None:
         return None
@@ -46,7 +38,6 @@ def _to_float(value: Any) -> Optional[float]:
     if value is None:
         return None
     try:
-        # Permitimos cosas tipo "8 000" o "8,000"
         txt = str(value).replace(" ", "").replace(",", "").strip()
         return float(txt)
     except Exception:
@@ -66,7 +57,6 @@ def _to_bool(value: Any) -> Optional[bool]:
             return True
         if v in ("false", "no", "0"):
             return False
-    # Si es algo raro, mejor lo ignoramos (None → no filtramos)
     return None
 
 
@@ -184,10 +174,6 @@ def vehicle_stats(session: Session, filters: Dict) -> Dict:
         "avg_km": avg_km,
     }
 
-
-# -------------------------------------------------
-# 🧩 Funciones legacy / wrappers para no romper API
-# -------------------------------------------------
 def get_vehicles_with_warranty_in_city(
     session: Session,
     city_text: str,
@@ -244,9 +230,6 @@ def search_vehicles(
     return list_vehicles(session, filters, limit=limite)
 
 
-# -------------------------------------------------
-# 📝 Formateo para el bot / API
-# -------------------------------------------------
 def format_vehicle_summary(vehicle: Vehicle) -> str:
     """
     Arma una descripción legible para el usuario.
@@ -271,7 +254,6 @@ def format_vehicle_summary(vehicle: Vehicle) -> str:
             f"precio base {vehicle.precio_base:,.0f} {vehicle.tipo_moneda}"
         )
 
-    # En datos: True → con garantía, vacío/None → sin garantía
     garantia_text = "con garantía" if vehicle.con_garantia else "sin garantía"
     partes.append(garantia_text)
 

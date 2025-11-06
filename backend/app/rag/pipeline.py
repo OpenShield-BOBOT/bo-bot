@@ -36,7 +36,6 @@ class RAGPipeline:
         self.top_k = 5
         self.max_distance = 0.8
 
-    # ---------------- EMBEDDING ----------------
     def _embed_query(self, text: str) -> List[float]:
         print("🧠 Generando embedding con Gemini...")
         try:
@@ -45,7 +44,6 @@ class RAGPipeline:
         except Exception as e:
             raise RuntimeError(f"Error generando embeddings con Gemini: {e}")
 
-    # ---------------- RETRIEVAL ----------------
     def _retrieve_context(self, question: str) -> Tuple[List[str], List[float]]:
         print(f"🔍 Buscando contexto relevante en Chroma para: '{question}'")
         try:
@@ -71,7 +69,6 @@ class RAGPipeline:
         print(f"📚 Fragmentos recuperados: {len(filtered_docs)}")
         return filtered_docs, distances
 
-    # ---------------- PROMPT ----------------
     def _build_prompt(
         self,
         question: str,
@@ -91,7 +88,6 @@ class RAGPipeline:
 
         has_history = bool(history_text)
 
-        # Bloque de personalidad general de BOBot
         persona_block = """
 Te llamas **BOBot** y eres el asistente virtual oficial de BOB Subastas, una empresa peruana
 dedicada a la compra y subasta de autos y maquinaria de segundo uso.
@@ -119,7 +115,6 @@ Límites de información:
 - Nunca inventes datos técnicos, precios, fechas, políticas ni condiciones comerciales.
 """
 
-        # Bloque de estilo dinámico según si es primer turno o ya hay historial
         if has_history:
             estilo_dialogo = """
 Contexto de conversación:
@@ -156,7 +151,6 @@ Contexto de conversación:
                 prompt += f"🕓 Historial reciente de conversación:\n{history_text}\n\n"
             prompt += f"Pregunta del usuario:\n{question}"
         else:
-            # Sin contexto en Chroma: usa solo conocimiento general sobre BOB Subastas
             prompt = (
                 f"{persona_block}\n"
                 f"{estilo_dialogo}\n"
@@ -174,7 +168,6 @@ Contexto de conversación:
 
         return prompt
 
-    # ---------------- LLM CALL ----------------
     def _call_llm(self, prompt: str) -> str:
         print("💬 Llamando a Gemini para generar respuesta...")
         try:
@@ -186,7 +179,6 @@ Contexto de conversación:
         except Exception as e:
             raise RuntimeError(f"Error generando respuesta con Gemini: {e}")
 
-    # ---------------- MAIN PIPELINE ----------------
     async def answer(
         self,
         question: str,
@@ -196,15 +188,12 @@ Contexto de conversación:
         print(f"\n🗨️ Nueva consulta: {question}")
         print(f"💡 Session ID: {session_id}")
 
-        # 1️⃣ Recuperar contexto
         context_chunks, _ = self._retrieve_context(question)
         used_context = bool(context_chunks)
         print(f"📚 Contexto utilizado: {'sí' if used_context else 'no'}")
 
-        # 2️⃣ Construir prompt
         prompt = self._build_prompt(question, context_chunks, chat_history)
 
-        # 3️⃣ Generar respuesta principal
         try:
             answer_text = self._call_llm(prompt)
         except Exception as e:

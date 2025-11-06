@@ -6,9 +6,6 @@ from typing import Literal
 import google.generativeai as genai
 from backend.app.core.config import get_settings
 
-# ==============================
-# 🔧 CONFIGURACIÓN GLOBAL
-# ==============================
 settings = get_settings()
 
 if settings.gemini_api_key:
@@ -16,16 +13,8 @@ if settings.gemini_api_key:
 else:
     print("⚠️ Advertencia: no se ha configurado GEMINI_API_KEY en el .env")
 
-# ---------------------------------------------------
-# 🧱 Tipos y constantes
-# ---------------------------------------------------
 LeadScore = Literal["frio", "templado", "caliente"]
 
-# Rangos oficiales según criterios_de_score.txt:
-# - CALIENTE: 85-100 puntos
-# - TIBIO:    65-84 puntos
-# - FRÍO:     45-64 puntos
-# - DESCARTADO: <45 puntos
 CALIENTE_MIN = 85
 TIBIO_MIN = 65
 FRIO_MIN = 45
@@ -35,13 +24,9 @@ MAX_SCORE = 100
 HOT_THRESHOLD = CALIENTE_MIN
 WARM_THRESHOLD = TIBIO_MIN
 
-# Puntaje neutro / fallback cuando NO se puede evaluar bien
-FALLBACK_SCORE = 20  # 👈 AHORA 20, no 50/30
+FALLBACK_SCORE = 20
 
 
-# ---------------------------------------------------
-# 🧠 Funciones internas
-# ---------------------------------------------------
 def _get_criteria_path() -> Path:
     """Devuelve la ruta correcta al archivo de criterios."""
     candidates = [
@@ -73,9 +58,6 @@ def _normalize_text(text: str) -> str:
     return text.strip()
 
 
-# ---------------------------------------------------
-# 🤖 Evaluación detallada con Gemini (criterios TXT)
-# ---------------------------------------------------
 def evaluate_lead(message: str) -> dict:
     """
     Evalúa el mensaje del usuario según los criterios oficiales definidos en
@@ -89,7 +71,6 @@ def evaluate_lead(message: str) -> dict:
     print("📊 [SCORING] Iniciando evaluación detallada del lead...")
     print(f"🗨️ Texto evaluado: {message}")
 
-    # 🔹 Regla explícita para saludos muy genéricos (ej. "hola", "buenas", etc.)
     norm = _normalize_text(message)
     saludos_simples = {
         "hola",
@@ -110,20 +91,16 @@ def evaluate_lead(message: str) -> dict:
         print("🟢 [SCORING] Detectado saludo simple → score 20 FRÍO.")
         data = {
             "total": FALLBACK_SCORE,
-            "categoria": "frio",  # en detallado sería <45 = 'descartado', pero usamos 'frio' en simple
+            "categoria": "frio",
             "detalle": {"motivo": "solo_saludo_sin_intencion"},
         }
         print(f"🏁 [RESULTADO FINAL] → FRIO ({FALLBACK_SCORE} pts, saludo simple)\n")
         return data
 
-    # -------------------- Cargamos criterios --------------------
     criteria_path = _get_criteria_path()
     criterios_txt = criteria_path.read_text(encoding="utf-8")
     print(f"📁 Criterios cargados desde: {criteria_path.name}")
 
-    # -------------------- Construimos el prompt --------------------
-    # OJO: aquí le dejamos clarísimo que NO debe devolver el documento de criterios,
-    # sino SOLO la evaluación aplicada al texto del usuario.
     system_instructions = """
 Eres un evaluador de leads para BOB Subastas.
 
@@ -183,7 +160,6 @@ Restricciones IMPORTANTES:
     model = genai.GenerativeModel(model_name)
 
     try:
-        # 👇 Forzamos salida JSON
         response = model.generate_content(
             prompt,
             generation_config={
@@ -201,7 +177,6 @@ Restricciones IMPORTANTES:
             "detalle": {},
         }
 
-    # -------------------- Parseo robusto del JSON --------------------
     try:
         try:
             data = json.loads(raw_text)
@@ -216,9 +191,6 @@ Restricciones IMPORTANTES:
         print("📦 JSON recibido desde Gemini:")
         print(json.dumps(data, indent=2, ensure_ascii=False))
 
-        # 🔎 Salvaguarda extra: si el modelo devolvió el SISTEMA en vez de la evaluación
-        # (por ejemplo, una estructura con "proceso_evaluacion_leads" y sin "total"),
-        # lo tratamos como error y usamos fallback.
         if (
             isinstance(data, dict)
             and "proceso_evaluacion_leads" in data
@@ -232,7 +204,6 @@ Restricciones IMPORTANTES:
         print("🟡 Fallback → asignando score 20 FRÍO.")
         data = {"total": FALLBACK_SCORE, "categoria": "frio"}
 
-    # -------------------- Normalización final --------------------
     try:
         total = int(data.get("total", FALLBACK_SCORE) or FALLBACK_SCORE)
     except Exception:
@@ -249,9 +220,6 @@ Restricciones IMPORTANTES:
 
     return data
 
-# ---------------------------------------------------
-# 🔹 Mapeos y helpers para integración
-# ---------------------------------------------------
 def _categoria_detallada_a_simple(categoria: str) -> LeadScore:
     """
     Convierte categoría detallada ('caliente', 'tibio', 'frio', 'descartado')

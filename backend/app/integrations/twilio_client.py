@@ -1,5 +1,3 @@
-# backend/app/integrations/twilio_client.py
-
 from typing import Optional
 
 from twilio.rest import Client
@@ -41,7 +39,6 @@ def send_whatsapp_message(*, to_number: str, body: str) -> None:
     """
     client = get_twilio_client()
     if client is None:
-        # No hay configuración de Twilio, no hacemos nada
         print("[Twilio] twilio_account_sid / twilio_auth_token no configurados. No se envía mensaje.")
         return
 
@@ -64,7 +61,6 @@ def send_whatsapp_message(*, to_number: str, body: str) -> None:
             body=body,
         )
     except Exception as e:
-        # En demo / dev no queremos que esto rompa nada.
         print(f"⚠️ [Twilio] Error enviando WhatsApp a {to}: {e}")
         return
 
@@ -79,7 +75,6 @@ def notify_advisor_new_hot_lead(
     No lanza excepción si falta configuración, solo sale silenciosamente.
     """
     if not settings.twilio_advisor_whatsapp:
-        # No hay número de asesor configurado
         return
 
     body = (
@@ -90,7 +85,6 @@ def notify_advisor_new_hot_lead(
         "Sugiero contactar a este número a la brevedad."
     )
 
-    # Reutilizamos el helper genérico
     send_whatsapp_message(
         to_number=settings.twilio_advisor_whatsapp,
         body=body,
