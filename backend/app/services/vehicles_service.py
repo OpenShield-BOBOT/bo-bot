@@ -1,9 +1,7 @@
 # backend/app/services/vehicles_service.py
 
 from typing import List, Optional
-
 from sqlmodel import Session, select
-
 from backend.app.db.models import Vehicle
 
 

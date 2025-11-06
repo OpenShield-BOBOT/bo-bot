@@ -6,7 +6,7 @@ from backend.app.schemas.chat import ChatMessage, ChatResponse
 from backend.app.rag.pipeline import RAGPipeline
 from backend.app.db.session import get_session
 from backend.app.db.models import Interaction
-from backend.app.services.vehicle_qa import try_answer_vehicle_question
+from backend.app.core.vehicle_service import try_answer_vehicle_question
 from backend.app.core.lead_scoring import (
     classify_lead,
     category_to_points,

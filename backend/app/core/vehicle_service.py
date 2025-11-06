@@ -1,70 +1,52 @@
-# backend/app/core/vehicles_service.py
-from typing import List, Optional
+# backend/app/core/vehicle_service.py
 
-from sqlmodel import select
-from sqlmodel import Session  # si tu get_session devuelve sqlmodel.Session
-from backend.app.db.models import Vehicle
+from backend.app.services.bob_api_service import get_live_sublots, format_sublot_summary
+from backend.app.services.vehicle_qa import try_answer_vehicle_question as qa_from_catalog
+from backend.app.services.vehicles_service import search_vehicles, format_vehicle_summary
 
 
-def get_vehicles_by_model_or_title(
-    db: Session,
-    query: str,
-    max_results: int = 5,
-) -> List[Vehicle]:
+def try_answer_vehicle_question(user_message: str, session):
     """
-    Busca vehículos cuyo título, marca o modelo matcheen con el query.
+    Lógica híbrida:
+    - Si detecta palabras relacionadas a 'subastas', consulta la API en vivo.
+    - Si detecta preguntas específicas de vehículos (placa, garantía, precio base),
+      usa el módulo vehicle_qa (base local del hackathon).
+    - Si detecta preguntas generales sobre vehículos, busca en la base local.
     """
-    q = f"%{query.lower()}%"
-    stmt = (
-        select(Vehicle)
-        .where(
-            (Vehicle.title.ilike(q)) |
-            (Vehicle.marca.ilike(q)) |
-            (Vehicle.modelo.ilike(q))
+    msg = user_message.lower()
+
+    # 🚀 SUBASTAS EN VIVO (API)
+    if any(word in msg for word in ["subasta", "venta directa", "maquinaria", "ofertas", "en vivo"]):
+        sublots = get_live_sublots()
+        if not sublots:
+            return True, "⚠️ No pude obtener la información de las subastas en este momento."
+
+        resumen = "\n\n".join([format_sublot_summary(s) for s in sublots[:3]])
+        answer = (
+            "📢 Actualmente hay subastas activas en **BOB Subastas**:\n\n"
+            f"{resumen}\n\n"
+            "Puedes ver más en [somosbob.com](https://somosbob.com) o contactar a un asesor."
         )
-        .limit(max_results)
-    )
-    return list(db.exec(stmt).all())
+        return True, answer
 
+    # 🔍 VEHÍCULOS CON CONSULTAS ESPECÍFICAS (placa, garantía, precio base)
+    handled, answer = qa_from_catalog(user_message, session)
+    if handled:
+        return True, answer
 
-def get_vehicles_by_city_and_guarantee(
-    db: Session,
-    ciudad: Optional[str] = None,
-    con_garantia: Optional[bool] = None,
-    max_results: int = 20,
-) -> List[Vehicle]:
-    """
-    Devuelve vehículos filtrando por ubicación y garantía.
-    """
-    stmt = select(Vehicle)
+    # 🚗 CONSULTA GENERAL DE CATÁLOGO LOCAL
+    if any(word in msg for word in ["vehículo", "auto", "carro", "camioneta", "garantía", "precio base", "placa"]):
+        vehicles = search_vehicles(session=session, limite=3)
+        if not vehicles:
+            return True, "No encontré vehículos que coincidan con tu búsqueda."
 
-    if ciudad:
-        c = f"%{ciudad.lower()}%"
-        stmt = stmt.where(Vehicle.ubicacion.ilike(c))
-
-    if con_garantia is not None:
-        target = "si" if con_garantia else "no"
-        stmt = stmt.where(Vehicle.con_garantia.ilike(target))
-
-    stmt = stmt.limit(max_results)
-    return list(db.exec(stmt).all())
-
-
-def format_vehicle_list_for_answer(vehicles: List[Vehicle]) -> str:
-    """
-    Texto amigable para el chat.
-    """
-    if not vehicles:
-        return "No encontré vehículos que cumplan con esos criterios en el dataset oficial."
-
-    lines = []
-    for v in vehicles:
-        line = (
-            f"- {v.title} ({v.marca or ''} {v.modelo or ''}, {v.anio or ''}) – "
-            f"Ubicación: {v.ubicacion or 'N/D'} – "
-            f"Precio base: {v.precio_base or 'N/D'} {v.tipo_moneda or ''} – "
-            f"Garantía: {v.con_garantia or 'N/D'}"
+        resumen = "\n\n".join([f"- {format_vehicle_summary(v)}" for v in vehicles])
+        answer = (
+            "🚗 Algunos vehículos disponibles en el catálogo de **BOB Subastas**:\n\n"
+            f"{resumen}\n\n"
+            "Puedes solicitar más detalles o ver los vehículos en la web oficial."
         )
-        lines.append(line)
+        return True, answer
 
-    return "Estos son algunos vehículos que encontré en el dataset oficial:\n" + "\n".join(lines)
+    # ❌ Si no aplica a vehículos ni subastas
+    return False, None
