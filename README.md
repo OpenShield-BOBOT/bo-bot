@@ -103,3 +103,37 @@ bo-bot/
 │  ├─ load_vehicles_from_csv.py  # Carga el catálogo en SQLite
 │  └─ load_leads_from_excel.py   # Carga leads ficticios
 └─ requirements.txt
+```
+
+## 💬 Endpoints Principales
+
+| Endpoint | Descripción |
+|-----------|--------------|
+| `POST /api/v1/chat` | Chat principal (RAG + Scoring) |
+| `POST /api/v1/twilio/whatsapp` | Webhook para mensajes de WhatsApp |
+| `GET /api/v1/metrics/summary` | Métricas generales del agente |
+| `GET /api/v1/leads` | Listado y filtro de leads |
+| `GET /api/v1/vehicles/list` | Catálogo de autos/maquinaria |
+
+---
+
+## 📈 Roadmap
+
+- ✅ Módulo de RAG embebido (Chroma + Gemini)  
+- ✅ Lead Scoring dinámico (criterios .txt)  
+- ✅ Integración Twilio  
+- 🔜 Dashboard de métricas (Streamlit)  
+- 🔜 Autenticación JWT para asesores  
+
+---
+
+## 🧑‍💻 Autor
+
+**Camilo Parraga Piñin**
+**Gerardo Chavez Ayala**
+**Alexander Aquino Pérez**
+
+🎯 *Desarrollo Backend / IA / Integraciones*  
+Proyecto presentado en la **Hackatón SomosBOB 2025**
+
+> “No solo estás programando — estás creando el futuro.”
