@@ -1,0 +1,63 @@
+Id,Categoría,Empresa,Pregunta,Respuesta
+1,Información General,Todos,¿Qué es BOB?,"BOB Subastas es una plataforma online que ayuda a las empresas a vender sus activos en desuso (vehículos, maquinaria y lotes industriales) mediante subastas transparentes y seguras."
+2,Información General,Todos,¿Qué logros tiene BOB?,Más de 748 subastas exitosas; más de 11 millones de dólares subastados; reconocida por Forbes como una de las 100 mejores startups del Perú en 2023 y 2024; entre los 500 mejores proyectos de impacto social y ambiental en Premios Verdes; ganadores del Batch 2022-II de StartUPC; ganadores del concurso Innovación Empresarial de ProInnóvate 2023.
+3,Información General,Todos,¿Quiénes son los principales clientes?,"Grandes empresas como Cumbra, Cosapi, Stracon, BCP, Mibanco, Pacífico Seguros, Santander Consumer, Acceso Crediticio, Oechsle, Promart, TGP, Ransa, UPC, Cineplanet, entre otras."
+4,Proceso de Subasta,Todos,¿Qué es una subasta virtual?,Un proceso digital en el que varios compradores interesados ofertan por un bien hasta que se alcanza la mejor propuesta al cierre del plazo. El postor con la oferta más alta al cierre gana.
+5,Proceso de Subasta,Todos,¿Qué tipos de subasta existen?,Subasta a sobre cerrado: ofertas secretas y encriptadas; Subasta dinámica: competencia en tiempo real con montos visibles; Subastas en vivo: similar a dinámica pero se cierra cuando otros se retiran; Venta directa: oferta directa que si es aceptada cierra inmediatamente.
+6,Pagos y Garantías,Todos,¿Qué formas de pago aceptan?,"Pagos al contado por transferencia bancaria. Depósito de garantía del 8%-10% al ganar, y saldo restante en 24 horas a cuenta del vendedor."
+7,Pagos y Garantías,Todos,¿Qué pasa con mi garantía si no gano la subasta o mi oferta no es aceptada?,"Si pagaste la garantía pero no resultaste adjudicatario, puedes solicitar la devolución íntegra en 15 días hábiles enviando tu comprobante. Alternativamente, puedes usar el monto para otro proceso de subasta."
+8,Pagos y Garantías,Todos,¿Hay pagos adicionales al monto ofertado?,"No, el monto incluye impuestos y comisión. Revisar boleta informativa por posibles pasivos adicionales."
+9,Pagos y Garantías,Todos,¿Se puede pagar en cuotas u obtener financiamiento?,"No. El pago es único y total, mediante transferencia bancaria. No se aceptan pagos fraccionados, cuotas ni financiamiento externo."
+10,Entrega y Logística,Todos,¿Cuáles son los tiempos de entrega?,Varía: sin transferencia notarial 5-10 días; con transferencia (vehículos) 2-4 semanas. Son tiempos promedio.
+11,Entrega y Logística,Todos,¿Dónde están ubicados los bienes?,BOB no tiene almacenes propios. La ubicación varía por vendedor y se indica en cada subasta.
+12,Entrega y Logística,Todos,¿Quién se hace cargo del traslado?,"El comprador, bajo modalidad ""como están y donde están""."
+13,Visitas,Todos,¿Se pueden visitar los bienes antes de ofertar?,"Depende del tipo de bien y del vendedor. En general, sí se permite visitar maquinaria, materiales o vehículos corporativos, pero no todos los bienes admiten visita (se indica en cada subasta). Para coordinar, contacte al asesor con anticipación y cumpla con los requisitos de seguridad del almacén (SCTR y EPPS)."
+14,Participación,Todos,¿Debo pagar para participar?,En la gran mayoría no. Solo algunos procesos específicos requieren pago previo (se indica en la subasta).
+15,Participación,Todos,¿Cómo me registro?,"En https://www.somosbob.com/registro, completar datos (nombre, DNI/RUC, correo, teléfono), aceptar términos."
+16,Participación,Todos,¿Cómo ofertar?,"Registrarse en la web, revisar bienes, bases, fotos, videos; contactar asesor si necesita visita o info adicional."
+17,Participación,Todos,¿Puedo mejorar mi oferta?,"Depende, de la modalidad de subasta. Indicame de que lote estas realizando la consulta"
+18,Participación,Todos,¿Puedo cancelar una oferta?,"Depende de la modalidad en la que estes participando, indicame que lote estas ofertando? "
+19,Participación,Todos,¿Puedo revender lo que compro?,"Sí, muchos participantes lo hacen para generar ingresos."
+20,Post-Subasta,Todos,¿Cómo sé si gané?,"Al cierre de la subasta, recibirás notificación por correo y/o WhatsApp confirmando si fuiste el ganador, con los pasos a seguir. También puedes ver el estado en tu panel de usuario dentro de la web."
+21,Post-Subasta,Todos,¿Qué pasa si gano y no pago?,"Cuenta suspendida temporal o definitivamente. Si ya se depositó garantía, se descuenta penalidad."
+22,Post-Subasta,Todos,¿Qué pasa si gano pero el vendedor rechaza mi oferta?,Devolución íntegra de la garantía en 15 días hábiles tras enviar comprobante.
+23,Garantía de Transparencia,Todos,¿Cómo sé que la subasta no está arreglada?,Ofertas registradas encriptadas con fecha/hora. Sistema determina ganador automáticamente.
+24,Garantía de Transparencia,Todos,¿Cómo sé que no favorecen a alguien?,Nombres de postores ocultos. Gana la oferta válida más alta. Procesos 100% digitales.
+25,Garantía de Transparencia,Todos,¿Qué pasa si detectan intento de arreglo?,Bloqueo de participación y reporte al cliente involucrado.
+26,Garantía de Transparencia,Todos,¿Si me ayudas a saber quien gana te puedo dar una comisión?,"No, en BOB subastas trabajamos con transparencia, la unica forma de resultar ganador es ofertando tu mejor precio. "
+27,Productos,Todos,¿Qué tipo de productos se subastan?,"Vehículos, maquinaria pesada/liviana, lotes mixtos (herramientas, repuestos, retail, chatarra, equipos, etc.)."
+28,Garantías del Producto,Todos,¿Hay garantía sobre los productos?,"No, se venden ""como están"". BOB ofrece transparencia con fotos, descripciones y visitas previas cuando posible."
+29,Aspectos Legales,Todos,¿Qué significa que el vehículo tenga orden de captura?,Orden aplicada por financieras por problemas de pago. Levantamiento tarda 30-40 días. No requiere acción del comprador.
+30,Aspectos Legales,Todos,¿Qué pasa si el bien tiene papeletas?,"Monto asumido por comprador. Se indica en boleta informativa, sugerimos revisar la información con abogados ya que hay casos que se puede apelar el pago de las mismas"
+31,Aspectos Legales,Todos,¿Qué pasa si el bien tiene prendas u otros?,"Si son de empresa vendedora, asumidas por ella; si no, por comprador. Se indica en boleta."
+32,Participación,pacifico seguros,¿Debo pagar para participar?,"Sí, oblaje de USD 300 como derecho de participación. Devolución si no gana."
+33,Documentación,pacifico seguros,¿Necesito documento adicional?,"Si, llenar un formulario que enviaremos al momento de solicitar el pago de oblaje."
+34,Visitas,pacifico seguros,¿Se pueden visitar los bienes antes de ofertar?,"SI, se puede agendar visitas de miercoles a viernes de 9 a 1pm"
+35,Pagos y Garantías,pacifico seguros,¿Qué garantía pago si gano?,8% del valor adjudicado. Del monto se descuentan los USD 300 del oblaje.
+36,Pagos y Garantías,pacifico seguros,¿Qué pasa con mi oblaje si no gano?,Devolución íntegra si se solicita según procedimiento.
+37,Post-Subasta,pacifico seguros,¿Qué pasa si gano?,"Pagar 8% de garantía (menos oblaje), luego 90% restante a vendedor. Garantía se convierte en comisión BOB."
+38,Participación,santander consumer,¿Debo pagar para participar?,"No, solo registro y aceptar términos."
+39,Visitas,santander consumer,¿Se pueden visitar los bienes antes de ofertar?,"No, no se permiten visitas previas."
+40,Pagos y Garantías,santander consumer,¿Qué garantía pago si gano?,8% del valor adjudicado.
+41,Pagos y Garantías,santander consumer,¿Qué pasa con mi garantía si no gano?,Devolución íntegra en 15 días hábiles tras enviar comprobante.
+42,Post-Subasta,santander consumer,¿Qué pasa si gano?,"Pagar 8% de garantía, luego 92% restante a Santander. Garantía es comisión BOB."
+43,Post-Subasta,santander consumer,¿Qué pasa si gano pero Santander rechaza?,Devolución íntegra de garantía en 15 días hábiles.
+44,Participación,acceso crediticio,¿Debo pagar para participar?,"No, solo registro y aceptar términos."
+45,Visitas,acceso crediticio,¿Se pueden visitar los bienes antes de ofertar?,"Sí, coordinar con asesor y cumplir requisitos de seguridad (SCTR y EPPS)."
+46,Pagos y Garantías,acceso crediticio,¿Qué garantía pago si gano?,8% del valor adjudicado.
+47,Pagos y Garantías,acceso crediticio,¿Qué pasa con mi garantía si no gano?,Devolución íntegra en 15 días hábiles tras enviar comprobante.
+48,Post-Subasta,acceso crediticio,¿Qué pasa si gano?,"Pagar 8% de garantía, luego 92% restante a vendedor. Garantía es comisión BOB."
+49,Post-Subasta,acceso crediticio,¿Qué pasa si gano pero Acceso rechaza?,Devolución íntegra de garantía en 15 días hábiles.
+50,Participación,Todos,¿Cuánto cuesta participar?,Generalmente gratuito. Excepción: Pacífico Seguros requiere derecho de participación.
+51,Post-Subasta,Todos,¿Qué pasa si participo y no gano?,"No pasa nada, no se paga nada. En Pacífico Seguros, se tramita devolución del oblaje."
+52,Pagos y Garantías,Todos,¿Qué garantía debo pagar si gano?,Porcentaje indicado en cada subasta (generalmente 8%-10%).
+53,Post-Subasta,Todos,¿Qué pasa si gano una subasta?,"Depositar 10% como garantía, pagar 90% restante a vendedor. La garantía se convierte en comisión BOB."
+54,Medios de Pago,Todos,¿Qué medios de pago aceptan?,Transferencias bancarias a cuenta del vendedor. No efectivo ni fuera de canal oficial.
+55,Participación,Todos,¿Cómo puedo participar?,"Registrarse en https://www.somosbob.com/registro, revisar subastas y ofertar en línea."
+56,Post-Subasta,Todos,¿Qué pasa si gano la subasta?,"Depositar 10% como garantía, luego completar 90% a vendedor. El 10% es comisión BOB."
+57,Post-Subasta,Todos,¿Por qué podría ser rechazada mi oferta después de ganar?,Por decisión del vendedor (ej. documentación o cambios internos). No afecta futuras participaciones.
+58,Información General,Todos,¿Cuáles son sus redes sociales?,"Estamos como bobsubastas en Facebook, TikTok, Instagram, LinkedIn y YouTube."
+59,Información General,Todos,¿En cuanto tiempo me dan respuesta si gano una subasta?,"Dependiendo de la empresa, en el caso de santander son 72h luego de cerrada la subasta, en otras empresas puede demorar de 3 a 7 días habiles."
+60,Información General,Todos,¿Cómo sé el estado del bien o vehículo subastado?,"Comprendemos su interés en conseguir algo de valor y su pregunta es muy importante. Como subastadores, nuestro compromiso es la transparencia total. Es fundamental saber que no ofrecemos garantías sobre el estado o funcionamiento de los vehículos. Todos se venden en la condición actual en que se encuentran (""as-is""). Para que usted pueda asegurar una buena compra, le ofrecemos dos herramientas clave: 1. Inspección Física (Visita): Le invitamos a inspeccionar el vehículo con un mecánico o experto de su confianza antes de la subasta. Así se asegura de lo que está comprando. 2. Historial del Bien: Podemos compartirle el historial o los documentos disponibles, pero esto siempre está sujeto a la información que nos proporcione la empresa vendedora. Para coordinar su inspección, solo debe indicarnos qué vehículo le interesa y con gusto gestionaremos la visita con uno de nuestros especialistas."
+61,Información General,Todos,¿Algo más comercial tendra?,"Entendido. Dado que somos una empresa de subastas (no un concesionario), nuestro inventario es muy dinámico. Para encontrar lo que buscas, por favor, indícanos la marca y el modelo específico del vehículo o maquinaria. Con esa información, podemos buscarlo en las subastas actuales o agendar una alerta para avisarte cuando esté disponible."
+62,Información General,Todos,¿Hay vehículos de color blanco en subasta?,"¡Entiendo! Estás buscando vehículos blancos. Mira, por ahora no puedo hacer un filtro exacto solo por color, ya que esa información no está tan detallada aquí. Sin embargo, para que lo veas al detalle, la mejor forma es revisar directamente las fotos y descripciones en el enlace de la subasta. ¿Me dices la marca, modelo o código de la subasta que te interesa? Así te doy el enlace al catálogo de inmediato. Si todavía estás explorando las opciones, puedes ver todas las subastas disponibles aquí: https://www.somosbob.com/subastas"

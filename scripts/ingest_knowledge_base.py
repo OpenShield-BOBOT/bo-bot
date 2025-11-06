@@ -1,0 +1,277 @@
+import sys
+import uuid
+from pathlib import Path
+from typing import List, Tuple
+
+import requests
+import chromadb
+import pandas as pd  # 👈 NUEVO
+
+# Aseguramos que el backend sea importable al ejecutar el script
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.append(str(ROOT_DIR))
+
+from backend.app.core.config import get_settings  # noqa: E402
+
+
+settings = get_settings()
+
+DATA_RAW_DIR = ROOT_DIR / "data" / "raw"
+CHROMA_DIR = Path(settings.chroma_db_dir)
+CHROMA_COLLECTION_NAME = "bob_knowledge_base"
+
+
+# -------------------------------
+# Utilidades de lectura y chunking
+# -------------------------------
+
+def read_txt_files() -> List[Tuple[Path, str]]:
+    """Lee todos los .txt en data/raw."""
+    if not DATA_RAW_DIR.exists():
+        raise FileNotFoundError(f"No existe la carpeta {DATA_RAW_DIR}")
+
+    files = sorted(DATA_RAW_DIR.glob("*.txt"))
+
+    documents: List[Tuple[Path, str]] = []
+    if not files:
+        print(
+            f"⚠️ No se encontraron archivos .txt en {DATA_RAW_DIR}. "
+            f"Se continuará solo con otras fuentes (por ejemplo, FAQs CSV)."
+        )
+        return documents
+
+    for path in files:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        documents.append((path, text))
+    return documents
+
+
+def read_faqs_csv() -> List[Tuple[Path, str]]:
+    """
+    Lee data/raw/faqs_bob.csv y transforma cada fila en un texto tipo Q&A oficial.
+
+    Se espera un CSV con columnas:
+      - Id
+      - Categoría
+      - Empresa
+      - Pregunta
+      - Respuesta
+    """
+    csv_path = DATA_RAW_DIR / "faqs_bob.csv"
+    if not csv_path.exists():
+        print(f"⚠️ No se encontró {csv_path}, se omiten FAQs.")
+        return []
+
+    print(f"📥 Cargando FAQs desde: {csv_path}")
+    try:
+        df = pd.read_csv(csv_path)
+    except Exception as e:
+        print(f"⚠️ No se pudo leer {csv_path}: {e}")
+        return []
+
+    docs: List[Tuple[Path, str]] = []
+    for _, row in df.iterrows():
+        pregunta = str(row.get("Pregunta") or "").strip()
+        respuesta = str(row.get("Respuesta") or "").strip()
+        categoria = str(row.get("Categoría") or "").strip()
+        empresa = str(row.get("Empresa") or "").strip()
+
+        if not pregunta or not respuesta:
+            continue
+
+        header_parts = []
+        if categoria:
+            header_parts.append(f"Categoría: {categoria}")
+        if empresa and empresa.lower() != "todos":
+            header_parts.append(f"Empresa: {empresa}")
+
+        header = " | ".join(header_parts)
+        if header:
+            texto = (
+                f"[{header}]\n\n"
+                f"Pregunta frecuente: {pregunta}\n"
+                f"Respuesta oficial: {respuesta}"
+            )
+        else:
+            texto = (
+                f"Pregunta frecuente: {pregunta}\n"
+                f"Respuesta oficial: {respuesta}"
+            )
+
+        # Usamos siempre el mismo path (faqs_bob.csv) como "origen" lógico
+        docs.append((csv_path, texto))
+
+    print(f"✅ FAQs cargadas desde CSV: {len(docs)} filas útiles")
+    return docs
+
+
+def chunk_text(text: str, chunk_size: int = 800, overlap: int = 200) -> List[str]:
+    """
+    Divide el texto en pedazos (chunks) con solapamiento.
+    Ej: chunk_size=800, overlap=200 → cada chunk comparte 200 chars con el anterior.
+    """
+    chunks: List[str] = []
+    start = 0
+    n = len(text)
+
+    if not text.strip():
+        return []
+
+    while start < n:
+        end = min(start + chunk_size, n)
+        chunk = text[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+        start += max(chunk_size - overlap, 1)
+
+    return chunks
+
+
+# -------------------------------
+# Embeddings con LM Studio
+# -------------------------------
+
+def embed_texts(texts: List[str]) -> List[List[float]]:
+    """
+    Llama a LM Studio (OpenAI compatible) para obtener embeddings
+    usando el modelo configurado en EMBEDDING_MODEL_NAME.
+    """
+    if not texts:
+        return []
+
+    base = settings.lmstudio_base_url.rstrip("/")
+    url = f"{base}/embeddings"
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {settings.lmstudio_api_key}",
+    }
+    payload = {
+        "model": settings.embedding_model_name,
+        "input": texts,
+    }
+
+    resp = requests.post(url, json=payload, headers=headers, timeout=60)
+    if resp.status_code != 200:
+        raise RuntimeError(
+            f"Error al llamar a LM Studio embeddings: {resp.status_code} {resp.text}"
+        )
+
+    data = resp.json()
+    embeddings = [item["embedding"] for item in data["data"]]
+    return embeddings
+
+
+# -------------------------------
+# Chroma: creación de la colección
+# -------------------------------
+
+def get_chroma_collection():
+    """
+    Crea (o recrea) una base de datos Chroma persistente en CHROMA_DIR
+    y devuelve la colección 'bob_knowledge_base'.
+    """
+    CHROMA_DIR.mkdir(parents=True, exist_ok=True)
+
+    client = chromadb.PersistentClient(path=str(CHROMA_DIR))
+
+    # Opcional: borrar colección previa para reindexar desde cero
+    try:
+        client.delete_collection(CHROMA_COLLECTION_NAME)
+    except Exception:
+        pass
+
+    collection = client.get_or_create_collection(name=CHROMA_COLLECTION_NAME)
+    return client, collection
+
+
+# -------------------------------
+# Pipeline de ingestión
+# -------------------------------
+
+def ingest():
+    print("📂 Leyendo archivos de texto desde:", DATA_RAW_DIR)
+    docs_txt = read_txt_files()
+    print(f"   → {len(docs_txt)} archivo(s) .txt encontrado(s).")
+
+    print("📂 Leyendo FAQs desde CSV (faqs_bob.csv)...")
+    docs_faqs = read_faqs_csv()
+    print(f"   → {len(docs_faqs)} filas de FAQs convertidas a documentos.")
+
+    docs = docs_txt + docs_faqs
+
+    if not docs:
+        raise RuntimeError(
+            "No hay documentos para ingestar. Asegúrate de tener "
+            "archivos .txt en data/raw y/o el archivo faqs_bob.csv."
+        )
+
+    print(f"📚 Documentos totales antes de chunking: {len(docs)}")
+
+    client, collection = get_chroma_collection()
+    print(f"💾 Usando Chroma en: {CHROMA_DIR}")
+    print(f"   → Colección: {CHROMA_COLLECTION_NAME}")
+
+    all_ids: List[str] = []
+    all_texts: List[str] = []
+    all_metadatas: List[dict] = []
+
+    # 1. Leer y chunkear
+    for file_path, text in docs:
+        rel_path = file_path.relative_to(ROOT_DIR)
+        chunks = chunk_text(text)
+        print(f"   · {file_path.name}: {len(chunks)} chunks")
+
+        for idx, chunk in enumerate(chunks):
+            doc_id = f"{file_path.stem}-{idx}-{uuid.uuid4().hex[:8]}"
+            all_ids.append(doc_id)
+            all_texts.append(chunk)
+            all_metadatas.append(
+                {
+                    "source": str(rel_path),
+                    "file_name": file_path.name,
+                    "chunk_index": idx,
+                }
+            )
+
+    print(f"🧠 Total de chunks a indexar: {len(all_texts)}")
+
+    # 2. Generar embeddings en batches
+    batch_size = 32
+    for start in range(0, len(all_texts), batch_size):
+        end = start + batch_size
+        batch_texts = all_texts[start:end]
+        batch_ids = all_ids[start:end]
+        batch_metadatas = all_metadatas[start:end]
+
+        print(f"   → Embeddings {start} - {end} ...", end="", flush=True)
+        batch_embeddings = embed_texts(batch_texts)
+
+        # 3. Guardar en Chroma
+        collection.add(
+            ids=batch_ids,
+            documents=batch_texts,
+            embeddings=batch_embeddings,
+            metadatas=batch_metadatas,
+        )
+        print(" OK")
+
+    # 4. Info final
+    try:
+        count = collection.count()
+    except Exception:
+        count = "desconocido"
+
+    print("✅ Ingesta completada.")
+    print(f"   → Chunks totales en la colección: {count}")
+
+
+def main():
+    print("🚀 Iniciando ingesta de base de conocimiento de BOB Subastas...")
+    ingest()
+    print("🎉 Listo.")
+
+
+if __name__ == "__main__":
+    main()
