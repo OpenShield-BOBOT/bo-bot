@@ -1,4 +1,6 @@
 import re
+import json
+from pathlib import Path
 from typing import Literal
 
 import google.generativeai as genai
@@ -9,35 +11,191 @@ from backend.app.core.config import get_settings
 # ==============================
 settings = get_settings()
 
-# Configura Gemini solo una vez
 if settings.gemini_api_key:
     genai.configure(api_key=settings.gemini_api_key)
 else:
     print("⚠️ Advertencia: no se ha configurado GEMINI_API_KEY en el .env")
 
+# ---------------------------------------------------
+# 🧱 Tipos y constantes
+# ---------------------------------------------------
 LeadScore = Literal["frio", "templado", "caliente"]
 
-POINTS_BY_CATEGORY = {
-    "frio": 1,
-    "templado": 3,
-    "caliente": 6,
+# Rangos oficiales según criterios_de_score.txt:
+# - CALIENTE: 85-100 puntos
+# - TIBIO:    65-84 puntos
+# - FRÍO:     45-64 puntos
+# - DESCARTADO: <45 puntos
+CALIENTE_MIN = 85
+TIBIO_MIN = 65
+FRIO_MIN = 45
+MIN_SCORE = 0
+MAX_SCORE = 100
+
+HOT_THRESHOLD = CALIENTE_MIN
+WARM_THRESHOLD = TIBIO_MIN
+
+
+# ---------------------------------------------------
+# 🧠 Funciones internas
+# ---------------------------------------------------
+def _get_criteria_path() -> Path:
+    """Devuelve la ruta correcta al archivo de criterios."""
+    candidates = [
+        Path("data/criterios_de_score.txt"),
+        Path("data/CRITERIOS_DE_SCORE.txt"),
+    ]
+    for p in candidates:
+        if p.exists():
+            return p
+    raise FileNotFoundError(
+        "❌ No se encontró 'data/criterios_de_score.txt' o 'data/CRITERIOS_DE_SCORE.txt'"
+    )
+
+
+def total_to_categoria(total: int) -> str:
+    """Convierte un score 0-100 en 'caliente', 'tibio', 'frio' o 'descartado'."""
+    if total >= CALIENTE_MIN:
+        return "caliente"
+    if total >= TIBIO_MIN:
+        return "tibio"
+    if total >= FRIO_MIN:
+        return "frio"
+    return "descartado"
+
+
+def _normalize_text(text: str) -> str:
+    text = text.lower()
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+# ---------------------------------------------------
+# 🤖 Evaluación detallada con Gemini (criterios TXT)
+# ---------------------------------------------------
+def evaluate_lead(message: str) -> dict:
+    """
+    Evalúa el mensaje del usuario según los criterios oficiales definidos en
+    data/criterios_de_score.txt. Devuelve un dict con totales y categoría.
+    """
+    print("\n------------------------------------")
+    print("📊 [SCORING] Iniciando evaluación detallada del lead...")
+    print(f"🗨️ Texto evaluado: {message}")
+
+    criteria_path = _get_criteria_path()
+    system_prompt = criteria_path.read_text(encoding="utf-8")
+
+    print(f"📁 Criterios cargados desde: {criteria_path.name}")
+
+    system_prompt += """
+    
+Asegúrate de devolver EXCLUSIVAMENTE un JSON válido, sin texto adicional ni explicaciones.
+Si no puedes evaluar, devuelve un JSON con esta estructura (usa valores enteros):
+{
+  "perfil_demografico": int,
+  "comportamiento_digital": int,
+  "capacidad_financiera": int,
+  "necesidad_urgencia": int,
+  "experiencia_previa": int,
+  "engagement_actual": int,
+  "contexto_compra": int,
+  "boosts": int,
+  "penalizaciones": int,
+  "total": int,
+  "categoria": "frio" | "tibio" | "caliente" | "descartado"
 }
+    """
 
-# Umbrales sobre el acumulado por sesión
-HOT_THRESHOLD = 12      # >= 12 puntos → sesión caliente
-WARM_THRESHOLD = 6      # >= 6 y < 12   → sesión templada
+    prompt = f"{system_prompt}\n\nTEXTO_DEL_USUARIO_O_CONVERSACION:\n{message}"
+
+    if not settings.gemini_api_key:
+        print("⚠️ [SCORING] No hay GEMINI_API_KEY, devolviendo score neutral.")
+        return {
+            "total": 50,
+            "categoria": "frio",
+            "detalle": {},
+        }
+
+    print("🤖 [Gemini] Enviando mensaje para evaluación avanzada...")
+
+    model_name = getattr(settings, "gemini_model_name", "gemini-2.5-flash") or "gemini-2.5-flash"
+    model = genai.GenerativeModel(model_name)
+
+    try:
+        # 👇 Forzamos salida JSON
+        response = model.generate_content(
+            prompt,
+            generation_config={
+                "response_mime_type": "application/json",
+            },
+        )
+        raw_text = (response.text or "").strip()
+        print("✅ [Gemini] Respuesta recibida correctamente.")
+
+    except Exception as e:
+        print(f"⚠️ [Gemini] Error durante la evaluación: {e}")
+        print("🟡 Fallback → asignando score neutral.")
+        return {
+            "total": 50,
+            "categoria": "frio",
+            "detalle": {},
+        }
+
+    # Intentamos parsear el JSON de forma robusta
+    try:
+        try:
+            data = json.loads(raw_text)
+        except Exception:
+            # Por si el modelo mete algo extra: recortamos al primer/último { }
+            start = raw_text.find("{")
+            end = raw_text.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                data = json.loads(raw_text[start : end + 1])
+            else:
+                raise
+        print("📦 JSON recibido desde Gemini:")
+        print(json.dumps(data, indent=2, ensure_ascii=False))
+    except Exception as e:
+        print(f"⚠️ No se pudo interpretar el JSON de Gemini: {e}")
+        print("🟡 Fallback → asignando score neutral.")
+        data = {"total": 50, "categoria": "frio"}
+
+    # Normalización
+    try:
+        total = int(data.get("total", 50) or 50)
+    except Exception:
+        total = 50
+    total = max(MIN_SCORE, min(MAX_SCORE, total))
+
+    categoria_oficial = total_to_categoria(total)
+    data["total"] = total
+    data["categoria"] = categoria_oficial
+
+    print(f"🏁 [RESULTADO FINAL] → {categoria_oficial.upper()} ({total} pts)")
+    print("------------------------------------\n")
+
+    return data
 
 
-# ==============================
-# 🔹 UTILIDADES DE SCORE
-# ==============================
-def category_to_points(label: str) -> int:
-    """Convierte una etiqueta ('frio', 'templado', 'caliente') en puntos."""
-    return POINTS_BY_CATEGORY.get(label.lower(), 0)
+
+# ---------------------------------------------------
+# 🔹 Mapeos y helpers para integración
+# ---------------------------------------------------
+def _categoria_detallada_a_simple(categoria: str) -> LeadScore:
+    """
+    Convierte categoría detallada ('caliente', 'tibio', 'frio', 'descartado')
+    a la escala simple ('caliente', 'templado', 'frio').
+    """
+    cat = (categoria or "").strip().lower()
+    if cat == "caliente":
+        return "caliente"
+    if cat in ("tibio", "templado"):
+        return "templado"
+    return "frio"
 
 
 def total_points_to_category(total: int) -> LeadScore:
-    """Dado el score acumulado, devuelve la categoría global."""
+    """Usa los mismos umbrales oficiales para mapear un total (0-100) a frío/templado/caliente."""
     if total >= HOT_THRESHOLD:
         return "caliente"
     if total >= WARM_THRESHOLD:
@@ -45,117 +203,48 @@ def total_points_to_category(total: int) -> LeadScore:
     return "frio"
 
 
-def normalize(text: str) -> str:
-    text = text.lower()
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
+def category_to_points(label: str) -> int:
+    """
+    Compatibilidad hacia atrás: traduce una categoría simple a un número
+    representativo de la escala (45/65/85).
+    """
+    lab = (label or "").strip().lower()
+    if lab == "caliente":
+        return HOT_THRESHOLD
+    if lab == "templado":
+        return WARM_THRESHOLD
+    return FRIO_MIN
 
 
-# ==============================
-# 🔹 CLASIFICADOR POR REGLAS (BACKUP)
-# ==============================
+# ---------------------------------------------------
+# 🔹 Fallback por reglas simples (solo si Gemini falla)
+# ---------------------------------------------------
 def classify_lead_rule_based(message: str) -> LeadScore:
-    """Versión simple por reglas."""
-    print("[LeadScoring] Usando método por REGLAS")
-
-    msg = normalize(message)
-
-    hot_phrases = [
-        "quiero comprar", "deseo comprar", "ya hice el pago",
-        "ya pague", "ya pagué", "ya transferí", "ya transfiri",
-        "quiero ofertar", "quiero hacer una oferta", "quiero cerrar la compra",
-        "cerrar trato", "puedo recoger el auto", "puedo recoger el vehículo",
-        "separar el auto", "reservar el auto",
-    ]
-
-    hot_word_combos = [
-        ["participar", "subasta"],
-        ["ofertar", "subasta"],
-        ["pujar", "subasta"],
-    ]
-
-    warm_keywords = [
-        "precio", "cuánto cuesta", "cuanto cuesta", "costo",
-        "disponible", "disponibilidad", "financiamiento", "crédito",
-        "credito", "garantía", "garantias", "estado del auto",
-        "estado del vehículo", "kilometraje", "km",
-    ]
-
-    interest_phrases = [
-        "estoy interesado", "estoy muy interesado", "me interesa",
-        "me llama la atención", "me llama la atencion",
-    ]
-
-    score = 0
-
-    if any(p in msg for p in hot_phrases):
-        score += 3
-
-    if any(all(w in msg for w in combo) for combo in hot_word_combos):
-        score += 3
-
-    if any(p in msg for p in warm_keywords):
-        score += 1
-
-    if any(p in msg for p in interest_phrases):
-        score += 1
-
-    if score >= 3:
+    """Clasificación por reglas muy básicas (solo respaldo)."""
+    print("[LeadScoring] Usando método por REGLAS (fallback)")
+    msg = _normalize_text(message)
+    if any(word in msg for word in ["comprar", "ofertar", "subasta", "pago", "transferi"]):
         return "caliente"
-    if score >= 1:
+    if any(word in msg for word in ["precio", "garantia", "financiamiento", "credito", "disponible"]):
         return "templado"
     return "frio"
 
 
-# ==============================
-# 🤖 CLASIFICADOR CON GEMINI
-# ==============================
-def classify_lead_llm(message: str) -> LeadScore:
+# ---------------------------------------------------
+# 🔹 Función pública principal
+# ---------------------------------------------------
+def classify_lead(text: str) -> LeadScore:
     """
-    Usa el modelo de Gemini para clasificar el lead.
-    Devuelve: "frio", "templado" o "caliente".
+    Clasifica el lead usando EXCLUSIVAMENTE los criterios oficiales del TXT,
+    aplicados al texto completo (mensaje o conversación).
+    Si algo falla, usa reglas simples como respaldo.
     """
-    system_prompt = (
-        "Eres un clasificador de intención de compra para BOB Subastas.\n\n"
-        "Debes analizar el MENSAJE DEL USUARIO y clasificarlo en una sola etiqueta:\n"
-        "- 'frio'      → saludo, dudas generales, sin intención clara de comprar u ofertar.\n"
-        "- 'templado'  → muestra interés, hace preguntas sobre precio, disponibilidad, "
-        "  estado del vehículo o financiamiento, pero no dice explícitamente que quiera ofertar o comprar.\n"
-        "- 'caliente'  → el usuario quiere participar en una subasta, ofertar, pujar, "
-        "  reservar, cerrar la compra o indica que ya pagó/transferió.\n\n"
-        "Responde SOLO con una de estas palabras, en minúsculas: frio, templado o caliente.\n"
-        "No agregues explicaciones ni texto adicional."
-    )
-
     try:
-        print("[LeadScoring] Llamando a Gemini para clasificar lead...")
-
-        model = genai.GenerativeModel("gemini-2.5-flash")
-        prompt = f"{system_prompt}\n\nMENSAJE DEL USUARIO:\n{message}"
-        response = model.generate_content(prompt)
-        content = response.text.strip().lower()
-
-        print(f"[LeadScoring] Gemini respondió: {content}")
-
+        detailed = evaluate_lead(text)
+        categoria_detallada = detailed.get("categoria", "frio")
+        lead_label = _categoria_detallada_a_simple(categoria_detallada)
+        print(f"[LeadScoring] Avanzado → {categoria_detallada} → {lead_label}")
+        return lead_label
     except Exception as e:
-        print(f"[LeadScoring] ⚠️ Error con Gemini, fallback a REGLAS: {e}")
-        return classify_lead_rule_based(message)
-
-    # Limpieza: validamos que la respuesta contenga algo válido
-    if "caliente" in content:
-        return "caliente"
-    if "templado" in content:
-        return "templado"
-    if "frio" in content or "frío" in content:
-        return "frio"
-
-    print("[LeadScoring] ⚠️ Respuesta Gemini no válida, fallback a REGLAS")
-    return classify_lead_rule_based(message)
-
-
-# ==============================
-# 🔹 FUNCIÓN PÚBLICA
-# ==============================
-def classify_lead(message: str) -> LeadScore:
-    """Usa primero la IA y, si algo falla, las reglas."""
-    return classify_lead_llm(message)
+        print(f"[LeadScoring] ⚠️ Error en scoring avanzado, fallback a reglas: {e}")
+        return classify_lead_rule_based(text)

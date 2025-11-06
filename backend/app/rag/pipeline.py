@@ -1,8 +1,8 @@
 from typing import Dict, List, Tuple, Optional
-import asyncio
+
 import chromadb
 import google.generativeai as genai
-from backend.app.core.advanced_scoring import evaluate_lead_detailed
+
 from backend.app.core.config import get_settings
 
 settings = get_settings()
@@ -19,7 +19,6 @@ class RAGPipeline:
     - Consulta Chroma (retrieval)
     - Construye prompt con contexto (si lo hay) + breve historial de la sesión
     - Llama al modelo de chat en Gemini
-    - Calcula lead_score avanzado en segundo plano (no bloquea)
     """
 
     def __init__(self) -> None:
@@ -100,6 +99,7 @@ class RAGPipeline:
             )
             if history_text:
                 prompt += f"🕓 Historial reciente de conversación:\n{history_text}\n\n"
+            prompt += f"Pregunta del usuario:\n{question}"
         else:
             prompt = (
                 "Eres BOB, el asistente virtual oficial de BOB Subastas, una empresa peruana "
@@ -125,16 +125,6 @@ class RAGPipeline:
         except Exception as e:
             raise RuntimeError(f"Error generando respuesta con Gemini: {e}")
 
-    # ---------------- ASYNC SCORING ----------------
-    async def _run_scoring_background(self, question: str, session_id: str):
-        """Ejecuta el scoring detallado sin bloquear la respuesta principal."""
-        print(f"📊 [AsyncTask] Iniciando scoring en segundo plano (sesión {session_id})...")
-        try:
-            detailed = evaluate_lead_detailed(question)
-            print(f"✅ [AsyncTask] Scoring completado → {detailed.get('categoria', 'frio').upper()} ({detailed.get('total', 50)})")
-        except Exception as e:
-            print(f"⚠️ [AsyncTask] Error en scoring: {e}")
-
     # ---------------- MAIN PIPELINE ----------------
     async def answer(
         self,
@@ -153,7 +143,7 @@ class RAGPipeline:
         # 2️⃣ Construir prompt
         prompt = self._build_prompt(question, context_chunks, chat_history)
 
-        # 3️⃣ Generar respuesta principal (rápida)
+        # 3️⃣ Generar respuesta principal
         try:
             answer_text = self._call_llm(prompt)
         except Exception as e:
@@ -162,15 +152,9 @@ class RAGPipeline:
                 "Por favor intenta más tarde."
             )
 
-        # 4️⃣ Iniciar scoring avanzado en segundo plano (no bloquea)
-        asyncio.create_task(self._run_scoring_background(question, session_id))
-
-        # 5️⃣ Responder al usuario inmediatamente
-        print("✅ Respuesta generada y enviada al usuario (scoring corriendo en background).")
+        print("✅ Respuesta generada y enviada al usuario.")
 
         return {
             "answer": answer_text,
-            "lead_score": "pendiente",
-            "lead_score_numeric": 0,
             "used_context": used_context,
         }

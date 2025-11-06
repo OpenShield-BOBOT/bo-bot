@@ -22,6 +22,10 @@ def list_interactions(
     session_id: Optional[str] = Query(None),
     lead_score: Optional[str] = Query(None),
 ):
+    """
+    Lista interacciones. Opcionalmente filtra por session_id y/o lead_score
+    (etiqueta textual: 'frio', 'templado', 'caliente').
+    """
     stmt = select(Interaction)
 
     if session_id:

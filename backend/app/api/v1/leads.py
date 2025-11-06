@@ -1,6 +1,6 @@
-from typing import List, Optional  # 👈 añadimos Optional
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Query  # 👈 añadimos Query
+from fastapi import APIRouter, Depends, Query
 from sqlmodel import Session, select
 
 from backend.app.db.session import get_session
@@ -19,27 +19,36 @@ def create_lead(
     session: Session = Depends(get_session),
 ) -> LeadRead:
     """
-    Crea un lead a partir de un usuario del chat web.
+    Crea un lead a partir de un usuario del chat web (u otros canales).
     Usado cuando el lead_score es 'caliente' y el usuario
     deja sus datos de contacto.
     """
     lead = Lead(
         session_id=payload.session_id,
         channel=payload.channel,
-        name=payload.name,
-        contact=payload.contact,
+        nombres=payload.nombres,
+        apellidos=payload.apellidos,
+        dni=payload.dni,
+        telefono=payload.telefono,
+        correo_electronico=str(payload.correo_electronico),
+        ciudad=payload.ciudad,
         lead_score=payload.lead_score,
         status="open",
     )
     session.add(lead)
     session.commit()
     session.refresh(lead)
+
     return LeadRead(
         id=lead.id,
         session_id=lead.session_id,
         channel=lead.channel,
-        name=lead.name,
-        contact=lead.contact,
+        nombres=lead.nombres,
+        apellidos=lead.apellidos,
+        dni=lead.dni,
+        telefono=lead.telefono,
+        correo_electronico=lead.correo_electronico,
+        ciudad=lead.ciudad,
         lead_score=lead.lead_score,
         status=lead.status,
         created_at=lead.created_at,
@@ -60,13 +69,18 @@ def list_hot_leads(
         .order_by(Lead.created_at.desc())
     )
     leads = session.exec(statement).all()
+
     return [
         LeadRead(
             id=l.id,
             session_id=l.session_id,
             channel=l.channel,
-            name=l.name,
-            contact=l.contact,
+            nombres=l.nombres,
+            apellidos=l.apellidos,
+            dni=l.dni,
+            telefono=l.telefono,
+            correo_electronico=l.correo_electronico,
+            ciudad=l.ciudad,
             lead_score=l.lead_score,
             status=l.status,
             created_at=l.created_at,
@@ -75,7 +89,7 @@ def list_hot_leads(
     ]
 
 
-@router.get("/", response_model=List[LeadRead])  # 👈 NUEVO
+@router.get("/", response_model=List[LeadRead])
 def list_leads(
     session: Session = Depends(get_session),
     channel: Optional[str] = Query(
@@ -119,8 +133,12 @@ def list_leads(
             id=l.id,
             session_id=l.session_id,
             channel=l.channel,
-            name=l.name,
-            contact=l.contact,
+            nombres=l.nombres,
+            apellidos=l.apellidos,
+            dni=l.dni,
+            telefono=l.telefono,
+            correo_electronico=l.correo_electronico,
+            ciudad=l.ciudad,
             lead_score=l.lead_score,
             status=l.status,
             created_at=l.created_at,

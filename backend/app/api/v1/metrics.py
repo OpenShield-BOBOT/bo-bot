@@ -7,6 +7,7 @@ from sqlmodel import Session, select
 from backend.app.db.session import get_session
 from backend.app.db.models import Interaction
 from backend.app.schemas.metrics import MetricsSummary
+from backend.app.core.lead_scoring import HOT_THRESHOLD  # 👈 NUEVO
 
 router = APIRouter(
     prefix="/metrics",
@@ -38,15 +39,20 @@ def get_metrics_summary(
     times = [i.response_time_ms for i in interactions if i.response_time_ms is not None]
     avg_response_time_ms = sum(times) / len(times) if times else None
 
-    # Leads calientes
-    hot = sum(1 for i in interactions if (i.lead_score or "").lower() == "caliente")
+    # Leads calientes (basado en score numérico 0-100)
+    hot = sum(
+        1
+        for i in interactions
+        if (i.lead_score_numeric or 0) >= HOT_THRESHOLD
+    )
     pct_hot_leads = (hot / total) * 100.0
 
-    # Asumimos que leads calientes se derivan a humano
+    # Asumimos que leads calientes se derivan a humano.
+    # "Resueltas sin derivar" = interacciones con contexto y score < HOT_THRESHOLD.
     resolved_without_derivation = sum(
         1
         for i in interactions
-        if (i.lead_score or "").lower() != "caliente" and i.used_context
+        if (i.lead_score_numeric or 0) < HOT_THRESHOLD and i.used_context
     )
     pct_resolved_without_derivation = (resolved_without_derivation / total) * 100.0
 

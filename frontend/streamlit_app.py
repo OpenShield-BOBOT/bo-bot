@@ -67,7 +67,7 @@ def render_chat_tab():
                 if lead_score:
                     label = f"🏷️ Lead: **{lead_score.upper()}**"
                     if lead_score_numeric is not None:
-                        label += f" ({lead_score_numeric})"
+                        label += f" ({lead_score_numeric}/100)"
                     info_parts.append(label)
                 if response_time_ms is not None:
                     info_parts.append(f"⏱️ {response_time_ms:.0f} ms")
@@ -134,7 +134,7 @@ def render_chat_tab():
             if lead_score:
                 label = f"🏷️ Lead: **{lead_score.upper()}**"
                 if lead_score_numeric is not None:
-                    label += f" ({lead_score_numeric})"
+                    label += f" ({lead_score_numeric}/100)"
                 info_parts.append(label)
             if response_time_ms is not None:
                 info_parts.append(f"⏱️ {response_time_ms:.0f} ms")
@@ -159,23 +159,60 @@ def render_chat_tab():
             st.markdown("---")
             st.info(
                 "🟢 Parece que tienes **alta intención de compra**. "
-                "Si deseas que un asesor comercial te contacte, deja tus datos."
+                "Para que un asesor comercial te contacte, por favor completa tus datos."
             )
+
             with st.form("lead_contact_form"):
-                name = st.text_input("Tu nombre")
-                contact = st.text_input("Tu teléfono o email de contacto")
+                col1, col2 = st.columns(2)
+                with col1:
+                    nombres = st.text_input("Nombres *")
+                with col2:
+                    apellidos = st.text_input("Apellidos *")
+
+                col3, col4 = st.columns(2)
+                with col3:
+                    dni = st.text_input("DNI (opcional)")
+                with col4:
+                    ciudad = st.text_input("Ciudad *")
+
+                telefono = st.text_input("Teléfono *")
+                correo_electronico = st.text_input("Correo electrónico *")
+
                 submitted = st.form_submit_button("Quiero que un asesor me contacte")
 
                 if submitted:
-                    if not name or not contact:
-                        st.warning("Por favor completa nombre y contacto.")
+                    # Validaciones básicas
+                    errores = []
+                    if not nombres.strip():
+                        errores.append("Debes ingresar tus nombres.")
+                    if not apellidos.strip():
+                        errores.append("Debes ingresar tus apellidos.")
+                    if not ciudad.strip():
+                        errores.append("Debes ingresar tu ciudad.")
+                    if not telefono.strip():
+                        errores.append("Debes ingresar tu teléfono.")
+                    if not correo_electronico.strip():
+                        errores.append("Debes ingresar tu correo electrónico.")
+                    elif "@" not in correo_electronico:
+                        errores.append("El correo electrónico no parece válido.")
+
+                    if dni and not dni.isdigit():
+                        errores.append("El DNI debe contener solo dígitos.")
+
+                    if errores:
+                        for err in errores:
+                            st.warning(err)
                     else:
                         payload = {
                             "session_id": session_id,
-                            "name": name,
-                            "contact": contact,
-                            "lead_score": lead_score,
                             "channel": "web",
+                            "lead_score": lead_score,
+                            "nombres": nombres.strip(),
+                            "apellidos": apellidos.strip(),
+                            "dni": dni.strip() or None,
+                            "telefono": telefono.strip(),
+                            "correo_electronico": correo_electronico.strip(),
+                            "ciudad": ciudad.strip(),
                         }
                         try:
                             r = requests.post(
@@ -327,25 +364,50 @@ def render_advisor_tab():
             return
 
         # Dropdown para seleccionar un lead específico
+        def build_full_name(l):
+            nombres = (l.get("nombres") or "").strip()
+            apellidos = (l.get("apellidos") or "").strip()
+            full = f"{nombres} {apellidos}".strip()
+            return full or "Sin nombre"
+
+        def build_contact_label(l):
+            tel = (l.get("telefono") or "").strip()
+            mail = (l.get("correo_electronico") or "").strip()
+            partes = []
+            if tel:
+                partes.append(f"Tel: {tel}")
+            if mail:
+                partes.append(f"Email: {mail}")
+            return " / ".join(partes) if partes else "Sin contacto"
+
         options = [
-            f"#{l['id']} · {l.get('name') or 'Sin nombre'} · "
-            f"{l.get('channel')} · {l.get('contact') or 'Sin contacto'}"
+            f"#{l['id']} · {build_full_name(l)} · "
+            f"{l.get('channel')} · {build_contact_label(l)}"
             for l in leads
         ]
+
         selected_label = st.selectbox("Selecciona un lead", options)
         selected_index = options.index(selected_label)
         selected_lead = leads[selected_index]
 
         st.markdown("---")
         st.markdown("**Detalle del lead seleccionado:**")
+        nombres = (selected_lead.get("nombres") or "").strip()
+        apellidos = (selected_lead.get("apellidos") or "").strip()
+        full_name = (f"{nombres} {apellidos}".strip()) or "—"
+
         st.markdown(f"- **ID**: `{selected_lead['id']}`")
         st.markdown(f"- **Session ID**: `{selected_lead['session_id']}`")
         st.markdown(f"- **Canal**: `{selected_lead.get('channel')}`")
-        st.markdown(f"- **Nombre**: {selected_lead.get('name') or '—'}")
-        st.markdown(f"- **Contacto**: {selected_lead.get('contact') or '—'}")
+        st.markdown(f"- **Nombre**: {full_name}")
+        st.markdown(f"- **DNI**: {selected_lead.get('dni') or '—'}")
+        st.markdown(f"- **Teléfono**: {selected_lead.get('telefono') or '—'}")
+        st.markdown(f"- **Correo**: {selected_lead.get('correo_electronico') or '—'}")
+        st.markdown(f"- **Ciudad**: {selected_lead.get('ciudad') or '—'}")
         st.markdown(f"- **Lead score**: {selected_lead.get('lead_score') or '—'}")
         st.markdown(f"- **Estado**: {selected_lead.get('status')}")
         st.markdown(f"- **Creado**: {selected_lead.get('created_at')}")
+
 
     # ---------------------------
     # Columna derecha: HISTORIAL DE CHAT
@@ -381,8 +443,14 @@ def render_advisor_tab():
             st.markdown(f"🕒 `{it['created_at']}`")
             st.markdown(f"👤 **Usuario:** {it['user_message']}")
             st.markdown(f"🤖 **Bot:** {it['bot_response']}")
+            lead_label = it.get("lead_score") or "-"
+            lead_numeric = it.get("lead_score_numeric", None)
+            if lead_numeric is not None:
+                score_str = f"{lead_label} ({lead_numeric}/100)"
+            else:
+                score_str = f"{lead_label}"
             st.caption(
-                f"Lead score: {it.get('lead_score') or '-'} · "
+                f"Lead score: {score_str} · "
                 f"Contexto: {'sí' if it.get('used_context') else 'no'} · "
                 f"{it['response_time_ms']:.0f} ms"
             )

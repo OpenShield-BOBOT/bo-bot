@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
-from sqlmodel import Session, delete
+from sqlmodel import Session, delete, select  # 👈 añadimos select
 
 # Aseguramos que el backend sea importable al ejecutar el script
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -51,7 +51,8 @@ def load_vehicles_from_csv(csv_path: Path, truncate_before: bool = True) -> None
         print("⚠️ Faltan estas columnas en el CSV:")
         for c in missing:
             print(f"   - {c}")
-        # Si quieres, aquí puedes hacer raise ValueError
+        # Si quieres hacerlo estricto, descomenta:
+        # raise ValueError(f"El CSV no tiene todas las columnas esperadas: {missing}")
 
     # Normalización de tipos numéricos
     df["precio_base"] = pd.to_numeric(df.get("precio_base"), errors="coerce")
@@ -75,7 +76,6 @@ def load_vehicles_from_csv(csv_path: Path, truncate_before: bool = True) -> None
 
         df["con_garantia"] = df["con_garantia"].apply(normalize_warranty)
 
-    # Aseguramos que la tabla exista
     print("🧱 Asegurando que las tablas existan (init_db)...")
     init_db()
 
@@ -88,6 +88,11 @@ def load_vehicles_from_csv(csv_path: Path, truncate_before: bool = True) -> None
         print("💾 Insertando vehículos en la base de datos...")
 
         for _, row in df.iterrows():
+            raw_placa = row.get("placa")
+            placa = None
+            if not pd.isna(raw_placa):
+                placa = str(raw_placa).strip().upper()  # 👈 normalizamos placa
+
             vehicle = Vehicle(
                 title=row.get("title"),
                 precio_base=float(row["precio_base"]) if not pd.isna(row.get("precio_base")) else None,
@@ -95,7 +100,7 @@ def load_vehicles_from_csv(csv_path: Path, truncate_before: bool = True) -> None
                 ubicacion=row.get("ubicacion"),
                 marca=row.get("marca"),
                 modelo=row.get("modelo"),
-                placa=str(row.get("placa")) if not pd.isna(row.get("placa")) else None,
+                placa=placa,
                 kilometraje=float(row["kilometraje"]) if not pd.isna(row.get("kilometraje")) else None,
                 anio=int(row["anio"]) if not pd.isna(row.get("anio")) else None,
                 procedencia=row.get("procedencia"),
@@ -108,8 +113,8 @@ def load_vehicles_from_csv(csv_path: Path, truncate_before: bool = True) -> None
 
         session.commit()
 
-        # Contador final
-        total = session.query(Vehicle).count()
+        # Contador final (versión SQLModel-friendly) 👇
+        total = len(session.exec(select(Vehicle)).all())
         print(f"✅ Carga completada. Vehículos en la tabla: {total}")
 
 

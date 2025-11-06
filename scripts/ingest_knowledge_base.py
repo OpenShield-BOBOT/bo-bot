@@ -3,9 +3,9 @@ import uuid
 from pathlib import Path
 from typing import List, Tuple
 
-import requests
 import chromadb
-import pandas as pd  # 👈 NUEVO
+import pandas as pd
+import google.generativeai as genai  # 👈 NUEVO
 
 # Aseguramos que el backend sea importable al ejecutar el script
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -17,9 +17,18 @@ from backend.app.core.config import get_settings  # noqa: E402
 
 settings = get_settings()
 
+# Configurar Gemini
+if settings.gemini_api_key:
+    genai.configure(api_key=settings.gemini_api_key)
+else:
+    print(
+        "⚠️ Advertencia: GEMINI_API_KEY no configurada. "
+        "El script de ingesta no podrá generar embeddings."
+    )
+
 DATA_RAW_DIR = ROOT_DIR / "data" / "raw"
 CHROMA_DIR = Path(settings.chroma_db_dir)
-CHROMA_COLLECTION_NAME = "bob_knowledge_base"
+CHROMA_COLLECTION_NAME = settings.chroma_collection_name  # 👈 Usamos config
 
 
 # -------------------------------
@@ -129,37 +138,35 @@ def chunk_text(text: str, chunk_size: int = 800, overlap: int = 200) -> List[str
 
 
 # -------------------------------
-# Embeddings con LM Studio
+# Embeddings con Gemini
 # -------------------------------
 
 def embed_texts(texts: List[str]) -> List[List[float]]:
     """
-    Llama a LM Studio (OpenAI compatible) para obtener embeddings
-    usando el modelo configurado en EMBEDDING_MODEL_NAME.
+    Genera embeddings usando Gemini (mismo modelo que el pipeline RAG).
     """
     if not texts:
         return []
 
-    base = settings.lmstudio_base_url.rstrip("/")
-    url = f"{base}/embeddings"
-
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {settings.lmstudio_api_key}",
-    }
-    payload = {
-        "model": settings.embedding_model_name,
-        "input": texts,
-    }
-
-    resp = requests.post(url, json=payload, headers=headers, timeout=60)
-    if resp.status_code != 200:
+    if not settings.gemini_api_key:
         raise RuntimeError(
-            f"Error al llamar a LM Studio embeddings: {resp.status_code} {resp.text}"
+            "GEMINI_API_KEY no está configurada. No se pueden generar embeddings."
         )
 
-    data = resp.json()
-    embeddings = [item["embedding"] for item in data["data"]]
+    embeddings: List[List[float]] = []
+
+    for text in texts:
+        try:
+            # Misma forma que usas en backend/app/rag/pipeline.py
+            result = genai.embed_content(
+                model=settings.gemini_embedding_model,
+                content=text,
+            )
+            emb = result["embedding"]
+            embeddings.append(emb)
+        except Exception as e:
+            raise RuntimeError(f"Error generando embedding con Gemini: {e}")
+
     return embeddings
 
 
@@ -170,7 +177,7 @@ def embed_texts(texts: List[str]) -> List[List[float]]:
 def get_chroma_collection():
     """
     Crea (o recrea) una base de datos Chroma persistente en CHROMA_DIR
-    y devuelve la colección 'bob_knowledge_base'.
+    y devuelve la colección configurada en settings.chroma_collection_name.
     """
     CHROMA_DIR.mkdir(parents=True, exist_ok=True)
 

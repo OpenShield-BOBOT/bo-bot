@@ -51,7 +51,6 @@ def load_leads_from_excel(xlsx_path: Path, truncate_excel_leads: bool = True) ->
         print("⚠️ Faltan estas columnas en el Excel:")
         for c in missing:
             print(f"   - {c}")
-        # Si quieres, podrías hacer: raise ValueError(...)
 
     print("🧱 Asegurando que las tablas existan (init_db)...")
     init_db()
@@ -65,25 +64,12 @@ def load_leads_from_excel(xlsx_path: Path, truncate_excel_leads: bool = True) ->
         print("💾 Insertando leads ficticios en la tabla Lead...")
 
         for idx, row in df.iterrows():
-            nombres = str(row.get("Nombres") or "").strip()
-            apellidos = str(row.get("Apellidos") or "").strip()
-            full_name = f"{nombres} {apellidos}".strip() or None
-
-            dni = str(row.get("DNI") or "").strip()
-            telefono = str(row.get("Teléfono") or "").strip()
-            email = str(row.get("Correo Electrónico") or "").strip()
-            ciudad = str(row.get("Ciudad") or "").strip()
-
-            # Construimos el campo contact
-            contact_parts = []
-            if telefono:
-                contact_parts.append(f"Tel: {telefono}")
-            if email:
-                contact_parts.append(f"Email: {email}")
-            if ciudad:
-                contact_parts.append(f"Ciudad: {ciudad}")
-
-            contact = " | ".join(contact_parts) if contact_parts else None
+            nombres = str(row.get("Nombres") or "").strip() or None
+            apellidos = str(row.get("Apellidos") or "").strip() or None
+            dni = str(row.get("DNI") or "").strip() or None
+            telefono = str(row.get("Teléfono") or "").strip() or None
+            email = str(row.get("Correo Electrónico") or "").strip() or None
+            ciudad = str(row.get("Ciudad") or "").strip() or None
 
             # session_id: usamos el DNI si existe, si no un fallback
             if dni:
@@ -94,9 +80,14 @@ def load_leads_from_excel(xlsx_path: Path, truncate_excel_leads: bool = True) ->
             lead = Lead(
                 session_id=session_id,
                 channel="excel_import",  # 👈 para distinguirlos
-                name=full_name,
-                contact=contact,
-                lead_score="caliente",
+                nombres=nombres,
+                apellidos=apellidos,
+                dni=dni,
+                telefono=telefono,
+                correo_electronico=email,
+                ciudad=ciudad,
+                lead_score="caliente",   # o None, según cómo los quieras catalogar
+                status="open",
             )
 
             session.add(lead)

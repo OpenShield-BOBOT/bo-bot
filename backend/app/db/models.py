@@ -18,16 +18,29 @@ class Interaction(SQLModel, table=True):
 
 class Lead(SQLModel, table=True):
     """
-    Lead derivado a un asesor desde el chat web (o desde otros canales).
+    Lead estandarizado según los campos del Excel + metadatos del canal/score.
     """
+
     id: Optional[int] = Field(default=None, primary_key=True)
+
+    # Identificador de conversación / tracking
     session_id: str
-    channel: str = Field(default="web")  # "web", "whatsapp", etc.
-    name: Optional[str] = None
-    contact: Optional[str] = None  # teléfono, email o ambos
-    lead_score: Optional[str] = None  # "caliente", "templado", etc.
+    channel: str = Field(default="web")  # "web", "whatsapp", "excel_import", etc.
+
+    # Campos equivalentes al Excel
+    nombres: Optional[str] = None
+    apellidos: Optional[str] = None
+    dni: Optional[str] = None
+    telefono: Optional[str] = None
+    correo_electronico: Optional[str] = None
+    ciudad: Optional[str] = None
+
+    # Metadata de score / estado
+    lead_score: Optional[str] = None  # "caliente", "templado", "frio", etc.
     status: str = Field(default="open")  # "open" / "closed"
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
 
 class Vehicle(SQLModel, table=True):
     """
@@ -43,11 +56,10 @@ class Vehicle(SQLModel, table=True):
     marca: Optional[str] = None
     modelo: Optional[str] = None
     placa: Optional[str] = None
-    kilometraje: Optional[float] = None 
+    kilometraje: Optional[float] = None
     anio: Optional[int] = None
     procedencia: Optional[str] = None
     con_garantia: Optional[bool] = None
     categoria: Optional[str] = None
     tipo_subasta: Optional[str] = None
     empresa_proveedora: Optional[str] = None
-

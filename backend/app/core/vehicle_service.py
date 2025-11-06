@@ -1,52 +1,279 @@
 # backend/app/core/vehicle_service.py
 
-from backend.app.services.bob_api_service import get_live_sublots, format_sublot_summary
-from backend.app.services.vehicle_qa import try_answer_vehicle_question as qa_from_catalog
-from backend.app.services.vehicles_service import search_vehicles, format_vehicle_summary
+from typing import Tuple, Optional
+
+from sqlmodel import Session
+
+from backend.app.services.bob_api_service import (
+    get_live_sublots,
+    format_sublot_summary,
+    filter_sublots_for_message,
+)
+from backend.app.services.vehicle_qa import (
+    try_answer_vehicle_question as qa_from_catalog,
+)
 
 
-def try_answer_vehicle_question(user_message: str, session):
+def _looks_like_live_auction_question(msg: str) -> bool:
     """
-    Lógica híbrida:
-    - Si detecta palabras relacionadas a 'subastas', consulta la API en vivo.
-    - Si detecta preguntas específicas de vehículos (placa, garantía, precio base),
-      usa el módulo vehicle_qa (base local del hackathon).
-    - Si detecta preguntas generales sobre vehículos, busca en la base local.
+    Heurística para detectar preguntas sobre subastas en vivo
+    (usaremos la API real de BOB en esos casos).
+
+    OJO: aquí queremos cosas tipo:
+      - "¿qué subastas hay?"
+      - "muéstrame las subastas activas"
+      - "qué hay en venta directa"
+    y NO cosas tipo:
+      - "quiero ofertar en una subasta"
+      - "cómo participo en las subastas"
+      - "cómo es el proceso para ofertar"
+    esas van al RAG porque son informativas/proceso.
     """
-    msg = user_message.lower()
+    msg = msg.lower()
 
-    # 🚀 SUBASTAS EN VIVO (API)
-    if any(word in msg for word in ["subasta", "venta directa", "maquinaria", "ofertas", "en vivo"]):
-        sublots = get_live_sublots()
-        if not sublots:
-            return True, "⚠️ No pude obtener la información de las subastas en este momento."
+    question_terms = [
+        "que subastas hay",
+        "qué subastas hay",
+        "que lotes hay",
+        "qué lotes hay",
+        "que hay en subasta",
+        "qué hay en subasta",
+        "que hay en venta directa",
+        "qué hay en venta directa",
+        "muestrame subastas",
+        "muéstrame subastas",
+        "muestrame los lotes",
+        "muéstrame los lotes",
+        "ver subastas",
+        "ver lotes",
+        "listar subastas",
+        "lista de subastas",
+        "subastas activas",
+        "subasta activa",
+        "subastas en vivo",
+        "sublotes",
+        "sub-lotes",
+    ]
 
-        resumen = "\n\n".join([format_sublot_summary(s) for s in sublots[:3]])
-        answer = (
-            "📢 Actualmente hay subastas activas en **BOB Subastas**:\n\n"
-            f"{resumen}\n\n"
-            "Puedes ver más en [somosbob.com](https://somosbob.com) o contactar a un asesor."
-        )
-        return True, answer
+    return any(term in msg for term in question_terms)
 
-    # 🔍 VEHÍCULOS CON CONSULTAS ESPECÍFICAS (placa, garantía, precio base)
-    handled, answer = qa_from_catalog(user_message, session)
+
+def _looks_like_process_question(msg: str) -> bool:
+    """
+    Detecta si el usuario está preguntando por proceso / cómo participar,
+    no por autos específicos ni por ver el catálogo.
+
+    Ejemplos:
+      - "quiero ofertar en una subasta"
+      - "cómo es el proceso para ofertar"
+      - "cómo participo en las subastas"
+      - "me refirió un amigo para participar"
+      - "cómo me registro"
+      - "tiempos de entrega", "plazos", etc.
+    """
+    msg = msg.lower()
+
+    keywords = [
+        "como ofertar",
+        "cómo ofertar",
+        "quiero ofertar",
+        "quiero pujar",
+        "como pujar",
+        "cómo pujar",
+        "como participo",
+        "cómo participo",
+        "participar en las subastas",
+        "participar en subastas",
+        "proceso para ofertar",
+        "proceso para participar",
+        "proceso de subasta",
+        "proceso de las subastas",
+        "registrarme",
+        "registro",
+        "inscribirme",
+        "inscripción",
+        "inscripcion",
+        "formulario de registro",
+        "como funciona la subasta",
+        "cómo funciona la subasta",
+        "como funciona bob",
+        "cómo funciona bob",
+        "metodo de pago",
+        "método de pago",
+        "pagos",
+        "pago",
+        "plazo",
+        "plazos",
+        "tiempo de entrega",
+        "entrega inmediata",
+        "lo necesito de inmediato",
+        "reemplazo urgente",
+        "he sido referido",
+        "fui referido",
+        "referido por un amigo",
+    ]
+
+    return any(k in msg for k in keywords)
+
+
+def _humanize_vehicle_type(slug: Optional[str]) -> Optional[str]:
+    if not slug:
+        return None
+    slug = slug.lower()
+    if slug.startswith("maquinaria"):
+        return "maquinaria pesada"
+    if slug.startswith("auto"):
+        return "autos / camionetas"
+    return slug.replace("-", " ")
+
+
+def _humanize_modality(slug: Optional[str]) -> Optional[str]:
+    if not slug:
+        return None
+    slug = slug.lower()
+    if slug == "venta-directa":
+        return "en venta directa"
+    if slug == "subasta":
+        return "en subasta"
+    return slug.replace("-", " ")
+
+
+def try_answer_vehicle_question(
+    user_message: str,
+    session: Session,
+    session_id: str,
+) -> Tuple[bool, Optional[str]]:
+    """
+    Lógica híbrida de vehículos / subastas (cuando el RAG no usó contexto):
+
+    1) Preguntas de PROCESO (cómo ofertar, cómo participar, plazos, entregas, etc.):
+       - NO las manejamos aquí → las responde el RAG general.
+
+    2) Catálogo del hackatón (tabla Vehicle, CSV embebido):
+       - detalle por placa
+       - conteos por marca
+       - listados y estadísticas con filtros
+       (vehicle_qa + memoria de filtros por sesión)
+
+    3) Subastas en vivo (API oficial de BOB):
+       - qué subastas/lotes hay ahora
+       - filtrar por marca, modelo, tipo de vehículo, ciudad, modalidad, precio máximo
+       - distinguir entre preguntas de "¿cuántos?" y "muéstrame ejemplos"
+
+    4) Si nada de lo anterior aplica, devolvemos (False, None) para que
+       la respuesta del RAG se mantenga.
+    """
+    text = (user_message or "").strip()
+    if not text:
+        return False, None
+
+    msg_lower = text.lower()
+
+    # 0️⃣ Si es claramente pregunta de PROCESO, que lo maneje el RAG
+    if _looks_like_process_question(msg_lower):
+        return False, None
+
+    # 1️⃣ CATÁLOGO DEL HACKATHON (tabla Vehicle) – prioridad sobre API BOB
+    handled, answer = qa_from_catalog(
+        user_message=text,
+        session=session,
+        session_id=session_id,
+    )
     if handled:
         return True, answer
 
-    # 🚗 CONSULTA GENERAL DE CATÁLOGO LOCAL
-    if any(word in msg for word in ["vehículo", "auto", "carro", "camioneta", "garantía", "precio base", "placa"]):
-        vehicles = search_vehicles(session=session, limite=3)
-        if not vehicles:
-            return True, "No encontré vehículos que coincidan con tu búsqueda."
+    # 2️⃣ SUBASTAS EN VIVO (API BOB) → sólo si es “qué subastas / lotes hay...”
+    if _looks_like_live_auction_question(msg_lower):
+        sublots = get_live_sublots()
+        if not sublots:
+            return True, (
+                "⚠️ Intenté consultar las subastas activas de BOB Subastas, "
+                "pero en este momento no pude obtener la información. "
+                "Te recomiendo revisar directamente la web oficial: https://somosbob.com"
+            )
 
-        resumen = "\n\n".join([f"- {format_vehicle_summary(v)}" for v in vehicles])
-        answer = (
-            "🚗 Algunos vehículos disponibles en el catálogo de **BOB Subastas**:\n\n"
-            f"{resumen}\n\n"
-            "Puedes solicitar más detalles o ver los vehículos en la web oficial."
-        )
+        filtered, meta = filter_sublots_for_message(text, sublots)
+        total_filt = len(filtered)
+
+        brand = meta.get("brand")
+        model = meta.get("model")
+        vehicle_type_slug = meta.get("vehicle_type_slug")
+        vehicle_type_h = _humanize_vehicle_type(vehicle_type_slug)
+        city = meta.get("city")
+        modality_slug = meta.get("modality_slug")
+        modality_h = _humanize_modality(modality_slug)
+        price_max = meta.get("price_max")
+        intent_count = meta.get("intent_count", False)
+
+        # 2.a) No encontramos nada con esos filtros
+        if total_filt == 0:
+            partes = ["Revisé las subastas activas de BOB Subastas"]
+
+            if modality_h:
+                partes.append(modality_h)
+            if vehicle_type_h:
+                partes.append(f"de **{vehicle_type_h}**")
+            if brand:
+                partes.append(f"para la marca **{brand.title()}**")
+            if model:
+                partes.append(f"modelo **{model.upper()}**")
+            if city:
+                partes.append(f"en **{city.title()}**")
+            if price_max is not None:
+                partes.append(f"con precios hasta aproximadamente **{int(price_max):,}**")
+
+            base = " ".join(partes)
+            answer = (
+                f"{base}, pero no encontré sublotes que coincidan con esos criterios en este momento.\n\n"
+                "Puedes probar con otra marca, tipo de vehículo, ciudad o rango de precio, "
+                "o ver el catálogo completo en https://somosbob.com."
+            )
+            return True, answer
+
+        # 2.b) Sí hay resultados filtrados
+        ejemplos = filtered[:3]
+        resumen = "\n\n".join(format_sublot_summary(s) for s in ejemplos)
+
+        encabezado_partes = ["📢 Actualmente veo"]
+
+        if intent_count:
+            encabezado_partes.append(f"**{total_filt} sublotes**")
+        else:
+            encabezado_partes.append(f"{total_filt} sublotes")
+
+        if vehicle_type_h:
+            encabezado_partes.append(f"de **{vehicle_type_h}**")
+        if brand:
+            encabezado_partes.append(f"de la marca **{brand.title()}**")
+        if model:
+            encabezado_partes.append(f"modelo **{model.upper()}**")
+        if city:
+            encabezado_partes.append(f"en **{city.title()}**")
+        if modality_h:
+            encabezado_partes.append(modality_h)
+
+        encabezado = " ".join(encabezado_partes) + "."
+
+        if intent_count:
+            answer = (
+                f"{encabezado}\n\n"
+                f"Para que te hagas una idea, aquí van algunos ejemplos:\n\n"
+                f"{resumen}\n\n"
+                "Si quieres, puedo ayudarte a afinar más la búsqueda "
+                "(por ejemplo, otra marca, ciudad o rango de precios), "
+                "o puedes ver todos los detalles en [somosbob.com](https://somosbob.com)."
+            )
+        else:
+            answer = (
+                f"{encabezado}\n\n"
+                f"Te muestro algunos de ellos:\n\n"
+                f"{resumen}\n\n"
+                "Si quieres ver más opciones o pujar por alguno, "
+                "puedes entrar a [somosbob.com](https://somosbob.com), "
+                "o decirme qué marca, modelo o ciudad te interesan y te ayudo a filtrarlos."
+            )
+
         return True, answer
 
-    # ❌ Si no aplica a vehículos ni subastas
+    # 3️⃣ No es claramente de vehículos/subastas → dejamos la respuesta de RAG
     return False, None
