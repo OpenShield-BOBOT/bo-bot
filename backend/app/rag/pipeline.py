@@ -1,8 +1,7 @@
 from typing import Dict, List, Tuple, Optional
-
+import asyncio
 import chromadb
 import google.generativeai as genai
-
 from backend.app.core.advanced_scoring import evaluate_lead_detailed
 from backend.app.core.config import get_settings
 
@@ -20,42 +19,43 @@ class RAGPipeline:
     - Consulta Chroma (retrieval)
     - Construye prompt con contexto (si lo hay) + breve historial de la sesión
     - Llama al modelo de chat en Gemini
-    - Calcula lead_score simple (por MENSAJE)
+    - Calcula lead_score avanzado en segundo plano (no bloquea)
     """
 
     def __init__(self) -> None:
+        print("🚀 Inicializando pipeline RAG con Gemini...")
         self.client = chromadb.PersistentClient(path=settings.chroma_db_dir)
         self.collection = self.client.get_or_create_collection(
             name=settings.chroma_collection_name
         )
+        print(f"📂 ChromaDB cargada: {settings.chroma_collection_name}")
+        print("📄 Documentos en la base:", self.collection.count())
 
-
-        self.chat_model = getattr(settings, "gemini_model_name", "gemini-1.5-flash")
+        self.chat_model = getattr(settings, "gemini_model_name", "gemini-2.5-flash")
         self.embedding_model = getattr(settings, "gemini_embedding_model", "models/embedding-001")
 
         self.top_k = 5
         self.max_distance = 0.8
 
+    # ---------------- EMBEDDING ----------------
     def _embed_query(self, text: str) -> List[float]:
-        """
-        Genera embeddings usando Gemini.
-        """
+        print("🧠 Generando embedding con Gemini...")
         try:
-            result = genai.embed_content(
-                model=self.embedding_model,
-                content=text
-            )
+            result = genai.embed_content(model=self.embedding_model, content=text)
             return result["embedding"]
         except Exception as e:
             raise RuntimeError(f"Error generando embeddings con Gemini: {e}")
 
+    # ---------------- RETRIEVAL ----------------
     def _retrieve_context(self, question: str) -> Tuple[List[str], List[float]]:
+        print(f"🔍 Buscando contexto relevante en Chroma para: '{question}'")
         try:
             count = self.collection.count()
         except Exception:
             count = 0
 
         if not count:
+            print("⚠️ Base de conocimiento vacía. Sin contexto.")
             return [], []
 
         query_embedding = self._embed_query(question)
@@ -68,114 +68,109 @@ class RAGPipeline:
         docs = result.get("documents", [[]])[0]
         distances = result.get("distances", [[]])[0]
 
-        filtered_docs, filtered_distances = [], []
-        for d, doc in zip(distances, docs):
-            if d <= self.max_distance:
-                filtered_docs.append(doc)
-                filtered_distances.append(d)
+        filtered_docs = [doc for d, doc in zip(distances, docs) if d <= self.max_distance]
+        print(f"📚 Fragmentos recuperados: {len(filtered_docs)}")
+        return filtered_docs, distances
 
-        return filtered_docs, filtered_distances
-
+    # ---------------- PROMPT ----------------
     def _build_prompt(
         self,
         question: str,
         context_chunks: List[str],
         chat_history: Optional[List[Dict[str, str]]] = None,
     ) -> str:
-        """
-        chat_history: lista de dicts tipo {"role": "user"/"assistant", "content": "..."}
-        Se usa como contexto conversacional adicional.
-        """
+        print("🧩 Construyendo prompt para Gemini...")
+
         history_text = ""
         if chat_history:
             last_msgs = chat_history[-6:]
-            lines: List[str] = []
-            for msg in last_msgs:
-                role = msg.get("role")
-                content = (msg.get("content") or "").strip()
-                if not content:
-                    continue
-                prefix = "Usuario" if role == "user" else "Asistente"
-                lines.append(f"{prefix}: {content}")
-            if lines:
-                history_text = "\n".join(lines)
+            history_text = "\n".join(
+                f"{'Usuario' if msg['role']=='user' else 'Asistente'}: {msg['content']}"
+                for msg in last_msgs if msg.get("content")
+            )
 
         if context_chunks:
             context_text = "\n\n".join(f"- {chunk.strip()}" for chunk in context_chunks)
             prompt = (
-                "Eres un asistente de BOB Subastas, una plataforma peruana de "
-                "compra y subasta de autos y maquinaria de segundo uso.\n\n"
-                "Responde de forma clara y amable usando **exclusivamente** la "
-                "información del contexto proporcionado y, cuando sea útil, el historial de la conversación.\n"
-                "Si algo importante no está en el contexto, di que no tienes información suficiente "
-                "y sugiere contactar a un asesor.\n\n"
-                f"Contexto de la base de conocimiento:\n{context_text}\n\n"
+                "Eres BOB, el asistente virtual oficial de **BOB Subastas**, una empresa peruana "
+                "dedicada a la compra y subasta de autos y maquinaria de segundo uso.\n\n"
+                "Responde solo usando el contexto proporcionado. "
+                "Si no encuentras información suficiente, sugiere contactar a un asesor.\n\n"
+                f"📚 Contexto relevante:\n{context_text}\n\n"
             )
             if history_text:
-                prompt += (
-                    "Historial breve de la conversación (no lo repitas literal, "
-                    "úsalo solo como referencia):\n"
-                    f"{history_text}\n\n"
-                )
+                prompt += f"🕓 Historial reciente de conversación:\n{history_text}\n\n"
         else:
             prompt = (
-                "Eres un asistente de BOB Subastas. No tienes contexto fiable de la base de conocimiento.\n\n"
-                "Puedes apoyarte SOLO en el historial de la conversación si ayuda, "
-                "pero si falta información clave, sé honesto y sugiere contactar a un asesor.\n\n"
+                "Eres BOB, el asistente virtual oficial de BOB Subastas, una empresa peruana "
+                "dedicada a la compra y subasta de autos y maquinaria de segundo uso.\n\n"
+                "Tu misión es resolver dudas sobre subastas, vehículos disponibles, precios base, "
+                "garantías y contacto con asesores.\n\n"
+                "Si no tienes información, responde breve, amable y sugiere contactar a un asesor. "
+                "Nunca inventes datos técnicos o fechas.\n\n"
+                f"Pregunta del usuario:\n{question}"
             )
-            if history_text:
-                prompt += f"Historial breve de la conversación:\n{history_text}\n\n"
 
-        prompt += (
-            f"Pregunta actual del usuario:\n{question}\n\n"
-            "Responde en español, en un tono profesional pero cercano."
-        )
         return prompt
 
+    # ---------------- LLM CALL ----------------
     def _call_llm(self, prompt: str) -> str:
-        """
-        Llama al modelo de Gemini para generar la respuesta.
-        """
+        print("💬 Llamando a Gemini para generar respuesta...")
         try:
             model = genai.GenerativeModel(self.chat_model)
             response = model.generate_content(prompt)
-            return (response.text or "").strip()
+            text = (response.text or "").strip()
+            print("✅ Gemini respondió con texto.")
+            return text
         except Exception as e:
             raise RuntimeError(f"Error generando respuesta con Gemini: {e}")
 
+    # ---------------- ASYNC SCORING ----------------
+    async def _run_scoring_background(self, question: str, session_id: str):
+        """Ejecuta el scoring detallado sin bloquear la respuesta principal."""
+        print(f"📊 [AsyncTask] Iniciando scoring en segundo plano (sesión {session_id})...")
+        try:
+            detailed = evaluate_lead_detailed(question)
+            print(f"✅ [AsyncTask] Scoring completado → {detailed.get('categoria', 'frio').upper()} ({detailed.get('total', 50)})")
+        except Exception as e:
+            print(f"⚠️ [AsyncTask] Error en scoring: {e}")
+
+    # ---------------- MAIN PIPELINE ----------------
     async def answer(
         self,
         question: str,
         session_id: str,
         chat_history: Optional[List[Dict[str, str]]] = None,
     ) -> Dict:
-        """
-        Devuelve:
-        - answer: texto de respuesta
-        - lead_score: etiqueta frio/templado/caliente (por mensaje)
-        - used_context: si se usó contexto Chroma
-        """
+        print(f"\n🗨️ Nueva consulta: {question}")
+        print(f"💡 Session ID: {session_id}")
+
+        # 1️⃣ Recuperar contexto
         context_chunks, _ = self._retrieve_context(question)
         used_context = bool(context_chunks)
+        print(f"📚 Contexto utilizado: {'sí' if used_context else 'no'}")
 
-        prompt = self._build_prompt(question, context_chunks, chat_history=chat_history)
+        # 2️⃣ Construir prompt
+        prompt = self._build_prompt(question, context_chunks, chat_history)
 
+        # 3️⃣ Generar respuesta principal (rápida)
         try:
             answer_text = self._call_llm(prompt)
         except Exception as e:
             answer_text = (
-                "⚠️ En este momento tengo problemas para conectarme con el modelo de IA. "
-                "Por favor, intenta nuevamente más tarde o contacta a un asesor. "
-                f"(Detalle técnico: {e})"
+                f"⚠️ Error al conectar con Gemini ({e}). "
+                "Por favor intenta más tarde."
             )
 
-        detailed = evaluate_lead_detailed(question)
-        lead_score = detailed["categoria"]
-        lead_score_numeric = detailed["total"]
+        # 4️⃣ Iniciar scoring avanzado en segundo plano (no bloquea)
+        asyncio.create_task(self._run_scoring_background(question, session_id))
+
+        # 5️⃣ Responder al usuario inmediatamente
+        print("✅ Respuesta generada y enviada al usuario (scoring corriendo en background).")
 
         return {
             "answer": answer_text,
-            "lead_score": lead_score,
-            "lead_score_numeric": lead_score_numeric,
+            "lead_score": "pendiente",
+            "lead_score_numeric": 0,
             "used_context": used_context,
         }

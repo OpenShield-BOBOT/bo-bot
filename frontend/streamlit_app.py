@@ -102,7 +102,7 @@ def render_chat_tab():
 
         try:
             resp = requests.post(
-                f"{BACKEND_URL}/api/v1/chat/", json=payload, timeout=60
+                f"{BACKEND_URL}/api/v1/chat/", json=payload, timeout=180
             )
             resp.raise_for_status()
             data = resp.json()

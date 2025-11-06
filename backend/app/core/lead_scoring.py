@@ -130,7 +130,7 @@ def classify_lead_llm(message: str) -> LeadScore:
     try:
         print("[LeadScoring] Llamando a Gemini para clasificar lead...")
 
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-2.5-flash")
         prompt = f"{system_prompt}\n\nMENSAJE DEL USUARIO:\n{message}"
         response = model.generate_content(prompt)
         content = response.text.strip().lower()

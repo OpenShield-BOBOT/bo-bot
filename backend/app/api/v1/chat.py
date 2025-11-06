@@ -1,5 +1,4 @@
 from time import perf_counter
-
 from fastapi import APIRouter, Depends
 from sqlmodel import Session, select
 
@@ -36,10 +35,16 @@ async def chat_endpoint(
     - Si el score cruza HOT_THRESHOLD, sugiere derivación a asesor.
     - Guarda interacción en SQLite.
     """
+
+    print("\n==============================")
+    print(f"💬 [NUEVO MENSAJE] Usuario → {payload.message}")
+    print(f"🧩 Session ID: {payload.session_id}")
+    print("==============================")
+
     start = perf_counter()
 
     # -----------------------
-    # 1) Intentar con Vehicle
+    # 1️⃣ Intentar con Vehicle
     # -----------------------
     handled, vehicle_answer = try_answer_vehicle_question(
         user_message=payload.message,
@@ -47,9 +52,12 @@ async def chat_endpoint(
     )
 
     if handled:
+        print("🚗 [VEHICLE_QA] La pregunta fue respondida con datos tabulares.")
+
         # Clasificación del MENSAJE (por texto)
-        message_label = classify_lead(payload.message)  # "frio"/"templado"/"caliente"
+        message_label = classify_lead(payload.message)
         message_points = category_to_points(message_label)
+        print(f"🏷️ Lead (mensaje): {message_label.upper()} ({message_points} pts)")
 
         # Score acumulado previo de la sesión
         prev_interactions = session.exec(
@@ -57,17 +65,20 @@ async def chat_endpoint(
         ).all()
         score_before = sum(i.lead_score_numeric or 0 for i in prev_interactions)
         score_after = score_before + message_points
+        print(f"📈 Score acumulado: {score_before} → {score_after}")
 
-        # Categoría global de la SESIÓN según el acumulado
+        # Categoría global de la SESIÓN
         session_category = total_points_to_category(score_after)
+        print(f"💡 Categoría global de sesión: {session_category.upper()}")
 
         # Respuesta basada en datos tabulares, sin RAG
         answer = vehicle_answer or ""
-        used_context = False  # aquí NO usamos Chroma ni RAG
+        used_context = False
 
         # ¿Acaba de cruzar el umbral caliente?
         crossed_hot_now = score_before < HOT_THRESHOLD <= score_after
         if crossed_hot_now:
+            print("🔥 El lead acaba de cruzar el umbral CALIENTE.")
             answer += (
                 "\n\n🟢 Veo que tienes **alta intención de compra**. "
                 "Puedo derivarte con un asesor comercial de BOB Subastas para ayudarte "
@@ -76,23 +87,22 @@ async def chat_endpoint(
 
         end = perf_counter()
         response_time_ms = (end - start) * 1000.0
+        print(f"⏱️ Tiempo total: {response_time_ms:.0f} ms")
 
-        # Guardar interacción en la BD
+        # Guardar interacción
         interaction = Interaction(
             session_id=payload.session_id,
             user_message=payload.message,
             bot_response=answer,
-            lead_score=message_label,          # etiqueta del MENSAJE
-            lead_score_numeric=message_points, # puntos que aportó este mensaje
+            lead_score=message_label,
+            lead_score_numeric=message_points,
             response_time_ms=response_time_ms,
             used_context=used_context,
         )
         session.add(interaction)
         session.commit()
+        print("💾 Interacción guardada correctamente en SQLite.")
 
-        # Respuesta al cliente:
-        # - lead_score: categoría de la SESIÓN
-        # - lead_score_numeric: score acumulado
         result = {
             "answer": answer,
             "lead_score": session_category,
@@ -100,13 +110,15 @@ async def chat_endpoint(
             "response_time_ms": response_time_ms,
             "lead_score_numeric": score_after,
         }
+        print("✅ [FIN Vehicle QA] Respuesta enviada al frontend.")
         return ChatResponse(**result)
 
     # ----------------------------------------
-    # 2) Si no aplica Vehicle → pipeline RAG
+    # 2️⃣ Si no aplica Vehicle → pipeline RAG
     # ----------------------------------------
+    print("🤖 [PIPELINE] Ejecutando RAG con Gemini...")
 
-    # Recuperar historial previo de la sesión (ordenado) para memoria
+    # Historial de conversación
     prev_interactions = session.exec(
         select(Interaction)
         .where(Interaction.session_id == payload.session_id)
@@ -114,12 +126,12 @@ async def chat_endpoint(
     ).all()
 
     chat_history = []
-    # Tomamos últimos 3 turnos usuario-bot (si existen)
     for it in prev_interactions[-3:]:
         chat_history.append({"role": "user", "content": it.user_message})
         chat_history.append({"role": "assistant", "content": it.bot_response})
+    print(f"🕓 Historial incluido: {len(chat_history)} mensajes")
 
-    # Llamar al pipeline con historial
+    # Llamar al pipeline
     result = await pipeline.answer(
         question=payload.message,
         session_id=payload.session_id,
@@ -128,45 +140,51 @@ async def chat_endpoint(
 
     end = perf_counter()
     response_time_ms = (end - start) * 1000.0
+    print(f"⏱️ Tiempo total: {response_time_ms:.0f} ms")
 
-    # Resultado del pipeline (lead_score = etiqueta del MENSAJE)
+    # Resultado del pipeline
     answer = result["answer"]
     message_label = (result.get("lead_score") or "frio").lower()
+    lead_score_numeric = result.get("lead_score_numeric", 0)
     used_context = result.get("used_context", False)
+
+    print(f"🏷️ Lead (mensaje): {message_label.upper()} ({lead_score_numeric})")
+    print(f"📚 Contexto usado: {'Sí' if used_context else 'No'}")
 
     # Puntos del MENSAJE
     message_points = category_to_points(message_label)
 
-    # Score acumulado previo de la sesión
+    # Score acumulado
     score_before = sum(i.lead_score_numeric or 0 for i in prev_interactions)
     score_after = score_before + message_points
-
-    # Categoría global de la SESIÓN
     session_category = total_points_to_category(score_after)
+    print(f"📈 Score acumulado: {score_before} → {score_after} ({session_category.upper()})")
 
-    # ¿Acaba de cruzar el umbral caliente?
+    # ¿Cruzó el umbral caliente?
     crossed_hot_now = score_before < HOT_THRESHOLD <= score_after
     if crossed_hot_now:
+        print("🔥 El lead acaba de cruzar el umbral CALIENTE.")
         answer += (
             "\n\n🟢 Veo que tienes **alta intención de compra**. "
             "Puedo derivarte con un asesor comercial de BOB Subastas para ayudarte "
             "con los siguientes pasos (ofertas, pagos, reservas, etc.)."
         )
 
-    # Guardar interacción en la base de datos
+    # Guardar interacción en la BD
     interaction = Interaction(
         session_id=payload.session_id,
         user_message=payload.message,
         bot_response=answer,
-        lead_score=message_label,           # etiqueta del MENSAJE
-        lead_score_numeric=message_points,  # puntos del mensaje
+        lead_score=message_label,
+        lead_score_numeric=message_points,
         response_time_ms=response_time_ms,
         used_context=used_context,
     )
     session.add(interaction)
     session.commit()
+    print("💾 Interacción guardada correctamente en SQLite.")
+    print("✅ [FIN Pipeline] Respuesta enviada al frontend.\n")
 
-    # Devolver respuesta al cliente (categoría de SESIÓN + score acumulado)
     result_out = {
         "answer": answer,
         "lead_score": session_category,
