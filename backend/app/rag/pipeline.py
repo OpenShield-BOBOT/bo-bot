@@ -85,31 +85,70 @@ class RAGPipeline:
             last_msgs = chat_history[-6:]
             history_text = "\n".join(
                 f"{'Usuario' if msg['role']=='user' else 'Asistente'}: {msg['content']}"
-                for msg in last_msgs if msg.get("content")
+                for msg in last_msgs
+                if msg.get("content")
             )
+
+        # Prompt base compartido: personalidad de BOBot y reglas
+        persona_block = """
+Te llamas **BOBot** y eres el asistente virtual oficial de BOB Subastas, una empresa peruana
+dedicada a la compra y subasta de autos y maquinaria de segundo uso.
+
+Tu estilo:
+- Hablas siempre en español.
+- Usas un tono cercano, sencillo y amigable (como un asesor buena onda, pero profesional).
+- Explicas las cosas de forma clara y directa.
+- Casi siempre terminas tus respuestas con una pregunta corta que invite a seguir conversando,
+  salvo que el usuario se despida o diga que ya no tiene más dudas.
+
+Reglas sobre asesores y límites:
+- Solo menciona a los asesores humanos de BOB Subastas cuando:
+  - El usuario pida explícitamente hablar con alguien / que lo contacten, o
+  - El usuario pida más información de un tema que SÍ está en el contexto o en tu respuesta,
+    pero ya no tengas más detalles concretos que aportar.
+- No menciones asesores por defecto en saludos o respuestas generales.
+
+Límites de información:
+- Si la pregunta es claramente sobre temas que NO están relacionados con BOB Subastas,
+  autos, maquinaria, subastas, precios, garantías, pagos o procesos de BOB:
+  - Responde que no tienes información sobre ese tema.
+  - Recalca que eres BOBot, el chatbot de BOB Subastas.
+  - Invita a la persona a preguntarte algo sobre BOB Subastas.
+
+- Nunca inventes datos técnicos, precios, fechas, políticas ni condiciones comerciales.
+"""
 
         if context_chunks:
             context_text = "\n\n".join(f"- {chunk.strip()}" for chunk in context_chunks)
             prompt = (
-                "Eres BOB, el asistente virtual oficial de **BOB Subastas**, una empresa peruana "
-                "dedicada a la compra y subasta de autos y maquinaria de segundo uso.\n\n"
-                "Responde solo usando el contexto proporcionado. "
-                "Si no encuentras información suficiente, sugiere contactar a un asesor.\n\n"
+                f"{persona_block}\n\n"
+                "Instrucciones específicas para esta respuesta:\n"
+                "- Usa EXCLUSIVAMENTE el contexto proporcionado a continuación para responder.\n"
+                "- Si el usuario pide más detalle de algo que aparece en el contexto pero no hay más "
+                "información, puedes decir que hasta ahí llega la información disponible y que, si lo desea, "
+                "un asesor de BOB Subastas puede darle más detalles.\n"
+                "- Si el contexto no responde la pregunta y la pregunta no parece estar relacionada con BOB Subastas, "
+                "di claramente que no tienes información sobre ese tema y recuérdale que eres BOBot.\n\n"
                 f"📚 Contexto relevante:\n{context_text}\n\n"
             )
             if history_text:
                 prompt += f"🕓 Historial reciente de conversación:\n{history_text}\n\n"
             prompt += f"Pregunta del usuario:\n{question}"
         else:
+            # Sin contexto en Chroma: usa solo conocimiento general sobre BOB Subastas
             prompt = (
-                "Eres BOB, el asistente virtual oficial de BOB Subastas, una empresa peruana "
-                "dedicada a la compra y subasta de autos y maquinaria de segundo uso.\n\n"
-                "Tu misión es resolver dudas sobre subastas, vehículos disponibles, precios base, "
-                "garantías y contacto con asesores.\n\n"
-                "Si no tienes información, responde breve, amable y sugiere contactar a un asesor. "
-                "Nunca inventes datos técnicos o fechas.\n\n"
-                f"Pregunta del usuario:\n{question}"
+                f"{persona_block}\n\n"
+                "No tienes contexto adicional de documentos para esta pregunta.\n"
+                "Responde usando únicamente lo que sepas sobre BOB Subastas y el sentido común.\n"
+                "- Si no estás seguro o no tienes información, dilo claramente.\n"
+                "- Si el usuario pide más detalle del proceso pero tú ya explicaste lo que sabes, "
+                "puedes mencionar que un asesor de BOB Subastas podría ayudarle con más detalle.\n"
+                "- Si la pregunta es claramente ajena a BOB Subastas, indica que no tienes información "
+                "sobre ese tema y recuérdale que eres BOBot, el chatbot de BOB Subastas.\n\n"
             )
+            if history_text:
+                prompt += f"🕓 Historial reciente de conversación:\n{history_text}\n\n"
+            prompt += f"Pregunta del usuario:\n{question}"
 
         return prompt
 
@@ -149,7 +188,8 @@ class RAGPipeline:
         except Exception as e:
             answer_text = (
                 f"⚠️ Error al conectar con Gemini ({e}). "
-                "Por favor intenta más tarde."
+                "Por ahora no puedo responder bien, pero puedes intentar de nuevo más tarde. "
+                "¿Te gustaría probar otra pregunta sobre BOB Subastas?"
             )
 
         print("✅ Respuesta generada y enviada al usuario.")

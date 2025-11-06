@@ -35,6 +35,9 @@ MAX_SCORE = 100
 HOT_THRESHOLD = CALIENTE_MIN
 WARM_THRESHOLD = TIBIO_MIN
 
+# Puntaje neutro / fallback cuando NO se puede evaluar bien
+FALLBACK_SCORE = 20  # 👈 AHORA 20, no 50/30
+
 
 # ---------------------------------------------------
 # 🧠 Funciones internas
@@ -82,6 +85,33 @@ def evaluate_lead(message: str) -> dict:
     print("📊 [SCORING] Iniciando evaluación detallada del lead...")
     print(f"🗨️ Texto evaluado: {message}")
 
+    # 🔹 Regla explícita para saludos muy genéricos (ej. "hola", "buenas", etc.)
+    norm = _normalize_text(message)
+    saludos_simples = {
+        "hola",
+        "buenas",
+        "buenas tardes",
+        "buenos dias",
+        "buenos días",
+        "buenas noches",
+        "hola buenos dias",
+        "hola buenos días",
+        "hola buenas tardes",
+        "hola buenas noches",
+        "hi",
+        "hey",
+        "hello",
+    }
+    if norm in saludos_simples:
+        print("🟢 [SCORING] Detectado saludo simple → score 20 FRÍO.")
+        data = {
+            "total": FALLBACK_SCORE,
+            "categoria": "frio",  # en detallado sería <45 = 'descartado', pero usamos 'frio' en simple
+            "detalle": {"motivo": "solo_saludo_sin_intencion"},
+        }
+        print(f"🏁 [RESULTADO FINAL] → FRIO ({FALLBACK_SCORE} pts, saludo simple)\n")
+        return data
+
     criteria_path = _get_criteria_path()
     system_prompt = criteria_path.read_text(encoding="utf-8")
 
@@ -109,9 +139,9 @@ Si no puedes evaluar, devuelve un JSON con esta estructura (usa valores enteros)
     prompt = f"{system_prompt}\n\nTEXTO_DEL_USUARIO_O_CONVERSACION:\n{message}"
 
     if not settings.gemini_api_key:
-        print("⚠️ [SCORING] No hay GEMINI_API_KEY, devolviendo score neutral.")
+        print("⚠️ [SCORING] No hay GEMINI_API_KEY, devolviendo score fallback (20).")
         return {
-            "total": 50,
+            "total": FALLBACK_SCORE,
             "categoria": "frio",
             "detalle": {},
         }
@@ -134,9 +164,9 @@ Si no puedes evaluar, devuelve un JSON con esta estructura (usa valores enteros)
 
     except Exception as e:
         print(f"⚠️ [Gemini] Error durante la evaluación: {e}")
-        print("🟡 Fallback → asignando score neutral.")
+        print("🟡 Fallback → asignando score 20 FRÍO.")
         return {
-            "total": 50,
+            "total": FALLBACK_SCORE,
             "categoria": "frio",
             "detalle": {},
         }
@@ -157,14 +187,15 @@ Si no puedes evaluar, devuelve un JSON con esta estructura (usa valores enteros)
         print(json.dumps(data, indent=2, ensure_ascii=False))
     except Exception as e:
         print(f"⚠️ No se pudo interpretar el JSON de Gemini: {e}")
-        print("🟡 Fallback → asignando score neutral.")
-        data = {"total": 50, "categoria": "frio"}
+        print("🟡 Fallback → asignando score 20 FRÍO.")
+        data = {"total": FALLBACK_SCORE, "categoria": "frio"}
 
     # Normalización
     try:
-        total = int(data.get("total", 50) or 50)
+        total = int(data.get("total", FALLBACK_SCORE) or FALLBACK_SCORE)
     except Exception:
-        total = 50
+        total = FALLBACK_SCORE
+
     total = max(MIN_SCORE, min(MAX_SCORE, total))
 
     categoria_oficial = total_to_categoria(total)
@@ -175,7 +206,6 @@ Si no puedes evaluar, devuelve un JSON con esta estructura (usa valores enteros)
     print("------------------------------------\n")
 
     return data
-
 
 
 # ---------------------------------------------------
@@ -191,6 +221,7 @@ def _categoria_detallada_a_simple(categoria: str) -> LeadScore:
         return "caliente"
     if cat in ("tibio", "templado"):
         return "templado"
+    # 'frio' y 'descartado' → 'frio' en la escala simple
     return "frio"
 
 

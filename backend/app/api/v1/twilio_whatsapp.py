@@ -13,6 +13,7 @@ from backend.app.core.lead_scoring import (
     evaluate_lead,
     total_points_to_category,
     HOT_THRESHOLD,
+    FALLBACK_SCORE,  # 👈 NUEVO: para alinear el fallback con 20
 )
 from backend.app.core.vehicle_service import try_answer_vehicle_question  # 👈 VEHÍCULOS
 
@@ -276,7 +277,14 @@ async def twilio_whatsapp_webhook(
     # Scoring avanzado (conversación)
     # ------------------------------
     detailed = evaluate_lead(conversation_text)
-    total = detailed.get("total", 50)
+
+    # 👇 Igual que en el chat web: usamos FALLBACK_SCORE (20) si no hay 'total'
+    total = detailed.get("total", FALLBACK_SCORE)
+    try:
+        total = int(total)
+    except Exception:
+        total = FALLBACK_SCORE
+
     session_category = total_points_to_category(total)  # frio/templado/caliente
 
     print(
@@ -327,7 +335,7 @@ async def twilio_whatsapp_webhook(
             )
 
         # 🔁 IMPORTANTE: ya NO notificamos al asesor aquí.
-        # Ahora la notificación se hace cuando el usuario manda sus datos
+        # La notificación se hace cuando el usuario manda sus datos
         # en handle_lead_data_message().
 
     # Guardar interacción en la base de datos (siempre)

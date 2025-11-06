@@ -9,10 +9,11 @@ from backend.app.rag.pipeline import RAGPipeline
 from backend.app.db.session import get_session
 from backend.app.db.models import Interaction
 from backend.app.core.vehicle_service import try_answer_vehicle_question
-from backend.app.core.lead_scoring import(
+from backend.app.core.lead_scoring import (
     evaluate_lead,
     total_points_to_category,
     HOT_THRESHOLD,
+    FALLBACK_SCORE,  # 👈 NUEVO: usamos el mismo fallback (20) que en lead_scoring.py
 )
 
 router = APIRouter(
@@ -110,7 +111,6 @@ async def chat_endpoint(
 
     final_answer = rag_answer
     used_context = rag_used_context
-    handled_by_vehicle = False
 
     # ---------------------------------------------------
     # 2️⃣ Si RAG NO usó contexto → intentamos vehículos
@@ -127,7 +127,6 @@ async def chat_endpoint(
             print("🚗 [VEHICLE_QA] La pregunta fue respondida con datos tabulares / API BOB.")
             final_answer = vehicle_answer or ""
             used_context = False  # viene de tablas / API, no de Chroma
-            handled_by_vehicle = True
         else:
             print("🚗 [VEHICLE_QA] No aplicó vehículo/subastas, se mantiene respuesta de RAG.")
 
@@ -135,7 +134,15 @@ async def chat_endpoint(
     # 3️⃣ Scoring sobre la conversación
     # --------------------------------
     detailed = evaluate_lead(conversation_text)
-    total = detailed.get("total", 50)
+
+    # 👇 Usamos el mismo fallback estándar que en evaluate_lead (20),
+    # por si por alguna razón no llega 'total' en el dict.
+    total = detailed.get("total", FALLBACK_SCORE)
+    try:
+        total = int(total)
+    except Exception:
+        total = FALLBACK_SCORE
+
     session_category = total_points_to_category(total)
 
     print(f"🏷️ Lead (detallado): {detailed.get('categoria', 'frio').upper()} ({total} pts)")
