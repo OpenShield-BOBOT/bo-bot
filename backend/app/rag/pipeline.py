@@ -3,8 +3,8 @@ from typing import Dict, List, Tuple, Optional
 import chromadb
 import google.generativeai as genai
 
+from backend.app.core.advanced_scoring import evaluate_lead_detailed
 from backend.app.core.config import get_settings
-from backend.app.core.lead_scoring import classify_lead
 
 settings = get_settings()
 
@@ -169,10 +169,13 @@ class RAGPipeline:
                 f"(Detalle técnico: {e})"
             )
 
-        lead_score = classify_lead(question)
+        detailed = evaluate_lead_detailed(question)
+        lead_score = detailed["categoria"]
+        lead_score_numeric = detailed["total"]
 
         return {
             "answer": answer_text,
             "lead_score": lead_score,
+            "lead_score_numeric": lead_score_numeric,
             "used_context": used_context,
         }

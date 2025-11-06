@@ -5,15 +5,11 @@ pydantic-settings
 sqlmodel
 aiosqlite
 chromadb
-langchain
-langchain-community
-langchain-openai
+google-generativeai
 requests
 python-dotenv
 python-multipart
-openai
-tiktoken
 streamlit
-twilio
 pandas
 openpyxl
+twilio

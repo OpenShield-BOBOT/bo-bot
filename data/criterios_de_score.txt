@@ -1,0 +1,110 @@
+PROCESO DE EVALUACIÓN DE LEADS - BOB SUBASTAS
+==============================================
+
+FASE 1: RECOPILACIÓN DE DATOS (por prioridad)
+----------------------------------------------
+1. Datos del Agente Comercial (datos_scoring_identificados)
+2. Datos del Agente de Atención (datos_scoring_identificados)
+3. Conversación completa con todos los agentes
+4. Datos del perfil inicial del prospecto
+5. Comportamiento observado (tiempo de respuesta, engagement)
+
+FASE 2: ANÁLISIS MULTIDIMENSIONAL (0 a 100 puntos)
+--------------------------------------------------
+
+DIMENSIÓN 1: PERFIL DEMOGRÁFICO (0-10 puntos)
+- Ubicación: +2 (Perú) / +1 (Latinoamérica) / +0.5 (Otros)
+- Profesión: +4 (empresario o PYME) / +2 (empleado) / +1 (no especifica)
+- Coherencia: +2 (consistente) / +1 (parcial) / +0 (incoherente)
+- Contexto apropiado: +2 (edad o situación coherente)
+
+DIMENSIÓN 2: COMPORTAMIENTO DIGITAL (0-15 puntos)
+- Velocidad de respuesta: +4 (<5min) / +2 (<30min) / +1 (>30min)
+- Nivel de detalle: +4 (específico) / +2 (moderado) / +1 (vago)
+- Engagement: +4 (preguntas específicas) / +2 (completo) / +1 (básico)
+- Completitud: +3 (datos completos) / +2 (parcial) / +1 (mínima)
+
+DIMENSIÓN 3: CAPACIDAD FINANCIERA (0-25 puntos)
+- Presupuesto mencionado:
+  +8 monto específico ("tengo S/50,000")
+  +6 rango definido ("entre S/30,000-60,000")
+  +4 referencia indirecta ("algo accesible")
+  +2 vago ("depende del precio")
+  +0 no menciona
+- Autoridad de compra:
+  +8 decisor directo ("yo decido", "mi empresa")
+  +6 influenciador fuerte ("consulto pero aprueban")
+  +4 participante activo ("evaluamos")
+  +2 consultor ("tengo que preguntar")
+  +0 sin autoridad ("solo viendo")
+- Timeframe:
+  +5 inmediato ("esta semana")
+  +4 corto ("este mes")
+  +3 mediano ("2-3 meses")
+  +1 largo ("próximo año")
+  +0 sin urgencia ("algún día")
+- Experiencia en compras similares:
+  +4 tiene experiencia / +2 poca / +0 primera vez
+
+DIMENSIÓN 4: NECESIDAD Y URGENCIA (0-15 puntos)
+- Nivel de urgencia: +6 (inmediato) / +4 (pronto) / +2 (futuro) / +0 (sin urgencia)
+- Consecuencias: +5 (críticas) / +3 (importantes) / +1 (menores) / +0 (ninguna)
+- Presión temporal: +4 (fecha específica) / +2 (general) / +1 (flexible) / +0 (ninguna)
+
+DIMENSIÓN 5: EXPERIENCIA PREVIA (0-10 puntos)
+- En subastas: +5 (experimentado) / +3 (alguna) / +1 (novato) / +0 (nunca)
+- En compras online: +5 (frecuente) / +3 (ocasional) / +1 (rara vez) / +0 (primera vez)
+
+DIMENSIÓN 6: ENGAGEMENT ACTUAL (0-10 puntos)
+- Disponibilidad: +3 (explícita) / +1 (implícita) / +0 (no clara)
+- Interés en demo o visita: +4 (solicita) / +2 (acepta) / +0 (rechaza)
+- Solicitudes específicas: +3 (pide detalles) / +1 (básicas) / +0 (ninguna)
+
+DIMENSIÓN 7: CONTEXTO DE COMPRA (0-15 puntos)
+- Motivo de compra:
+  +5 reemplazo urgente (dañado, crítico)
+  +4 expansión de negocio
+  +3 mejora planificada
+  +2 exploración de oportunidades
+  +1 curiosidad general
+- Investigación realizada:
+  +5 comparó múltiples opciones
+  +3 investigó parcialmente
+  +1 primera búsqueda
+- Conocimiento del producto:
+  +5 experto (especificaciones)
+  +3 intermedio (básicas)
+  +1 básico (conceptos)
+
+BOOSTS (+3 a +7 puntos)
+------------------------
++7 referido por cliente
++6 mencionó competencia específica
++6 solicitó especialista
++5 timeframe con fecha específica
++4 preguntó garantías o servicio
++3 conocimiento técnico específico
+
+PENALIZACIONES (-2 a -6 puntos)
+-------------------------------
+-6 comportamiento "tire-patadas"
+-5 inconsistencias en información
+-4 evasivas sobre presupuesto
+-2 múltiples consultas sin compromiso
+
+CLASIFICACIÓN FINAL
+--------------------
+LEAD CALIENTE (85-100 puntos)
+→ Contacto inmediato (1 hora) por vendedor especialista
+→ Seguimiento: llamada o mensaje + seguimiento en 4h
+
+LEAD TIBIO (65-84 puntos)
+→ Contacto: 4-8 horas
+→ Seguimiento: mensaje o llamada + seguimiento 24h
+
+LEAD FRÍO (45-64 puntos)
+→ Contacto: invitación a comunidad
+→ Seguimiento: mensual
+
+DESCARTADO (<45 puntos)
+→ No se continúa seguimiento activo
