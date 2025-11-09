@@ -127,10 +127,12 @@ bo-bot/
 
 ---
 
-## 🧑‍💻 Autor
+## 🧑‍💻 Autores
 
 **Camilo Parraga Piñin**
+
 **Gerardo Chavez Ayala**
+
 **Alexander Aquino Pérez**
 
 🎯 *Desarrollo Backend / IA / Integraciones*  
